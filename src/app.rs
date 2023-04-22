@@ -4,7 +4,7 @@ use winit::{
     window::WindowBuilder,
 };
 
-use crate::graphics::{Renderer, Scene};
+use crate::{renderer::Renderer, scene::Scene};
 
 pub fn run() {
     env_logger::init();
