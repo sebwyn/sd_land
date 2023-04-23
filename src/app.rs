@@ -1,10 +1,21 @@
+use legion::World;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-use crate::{renderer::Renderer, scene::Scene};
+use crate::{renderer::Renderer, graphics::RectangleBuilder};
+
+fn initialize_world(world: &mut World) {
+    
+    let rectangle = RectangleBuilder::default()
+        .position(-0.5, -0.5)
+        .size(0.5, 0.5)
+        .build();
+
+    world.push((rectangle,));
+}
 
 pub fn run() {
     env_logger::init();
@@ -12,7 +23,9 @@ pub fn run() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     let mut renderer = pollster::block_on(Renderer::new(&window));
-    let scene = Scene::new();
+    let mut world = World::default();
+
+    initialize_world(&mut world);
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -34,7 +47,7 @@ pub fn run() {
             _ => {}
         },
         Event::RedrawRequested(_) => {
-            match renderer.render_scene(&scene) {
+            match renderer.render_scene(&world) {
                 Ok(_) => {}
                 // Reconfigure the surface if lost
                 Err(wgpu::SurfaceError::Lost) => renderer.resize(renderer.size()),

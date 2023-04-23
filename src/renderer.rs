@@ -1,35 +1,8 @@
+use legion::{World, IntoQuery};
 use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, RenderPipeline, Buffer, util::DeviceExt};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::scene::Scene;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
-}
-
-impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
-
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBS,
-        }
-    }
-}
-
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
-];
+use crate::graphics::{Vertex, Rectangle};
 
 pub struct Renderer {
     instance: Instance,
@@ -40,12 +13,33 @@ pub struct Renderer {
     config: SurfaceConfiguration,
     size: PhysicalSize<u32>,
     //may move
-    render_pipeline: RenderPipeline,
-    vertex_buffer: Buffer
+    render_pipeline: RenderPipeline
 }
 
 impl Renderer {
-    pub fn render_scene(&mut self, scene: &Scene) -> Result<(), wgpu::SurfaceError> {
+    pub fn render_scene(&mut self, scene: &World) -> Result<(), wgpu::SurfaceError> {
+        let mut query = <&Rectangle>::query();
+
+        let vertices = query
+            .iter(scene)
+            .map(|rect| rect.vertices)
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let num_rectangles = vertices.len() / 4;
+        let indices = (0..num_rectangles)
+            .into_iter()
+            .map(|i| 
+                Rectangle::INDICES.iter()
+                .map(move |e| *e + (i * 6) as u32))
+            .flatten()
+            .collect::<Vec<_>>();
+        
+
+        let vertex_buffer = self.create_vertex_buffer(&vertices);
+        let index_buffer = self.create_index_buffer(&indices);
+        let num_indices = indices.len() as u32;
+        
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -74,8 +68,9 @@ impl Renderer {
 
             render_pass.set_pipeline(&self.render_pipeline); // 2.
             
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
+            render_pass.draw_indexed(0..num_indices, 0, 0..1); // 2.
         }
     
         // submit will accept anything that implements IntoIter
@@ -103,6 +98,25 @@ impl Renderer {
 }
 
 impl Renderer {
+fn create_vertex_buffer(&self, vertices: &[Vertex]) -> Buffer {
+    self.device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }
+    )
+}
+fn create_index_buffer(&self, indices: &[u32]) -> Buffer {
+    self.device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }
+    )
+}
+
 pub async fn new(window: &Window) -> Renderer {
     let size = window.inner_size();
 
@@ -213,14 +227,6 @@ pub async fn new(window: &Window) -> Renderer {
         multiview: None, // 5.
     });
 
-    let vertex_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        }
-    );
-
     Renderer {
         instance,
         surface,
@@ -229,8 +235,7 @@ pub async fn new(window: &Window) -> Renderer {
         queue,
         config,
         size,
-        render_pipeline,
-        vertex_buffer
+        render_pipeline
     }
 }
 }

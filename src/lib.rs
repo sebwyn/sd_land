@@ -1,4 +1,4 @@
 pub mod app;
 pub mod graphics;
 pub mod renderer;
-pub mod scene;
+pub mod resources;
