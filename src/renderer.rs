@@ -1,8 +1,8 @@
 use legion::{World, IntoQuery};
-use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, RenderPipeline, Buffer, util::DeviceExt};
+use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, RenderPipeline, Buffer, util::DeviceExt, TextureAspect, BindGroup, BindGroupLayout};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::graphics::{Vertex, Rectangle};
+use crate::{graphics::{Vertex, Rectangle}, resources::Material};
 
 pub struct Renderer {
     instance: Instance,
@@ -13,7 +13,8 @@ pub struct Renderer {
     config: SurfaceConfiguration,
     size: PhysicalSize<u32>,
     //may move
-    render_pipeline: RenderPipeline
+    render_pipeline: RenderPipeline,
+    // diffuse_bind_group: BindGroup
 }
 
 impl Renderer {
@@ -67,7 +68,8 @@ impl Renderer {
             });
 
             render_pass.set_pipeline(&self.render_pipeline); // 2.
-            
+            // render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
             render_pass.draw_indexed(0..num_indices, 0, 0..1); // 2.
@@ -91,13 +93,38 @@ impl Renderer {
 }
 
 
-
-
 impl Renderer {
     pub fn size(&self) -> PhysicalSize<u32> { self.size }
 }
 
 impl Renderer {
+pub fn load_material(&self, material: Material) {
+    let texture_bind_group_layout =
+            self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+    Vec::new()
+}
+
 fn create_vertex_buffer(&self, vertices: &[Vertex]) -> Buffer {
     self.device.create_buffer_init(
         &wgpu::util::BufferInitDescriptor {
@@ -120,17 +147,11 @@ fn create_index_buffer(&self, indices: &[u32]) -> Buffer {
 pub async fn new(window: &Window) -> Renderer {
     let size = window.inner_size();
 
-    // The instance is a handle to our GPU
-    // Backends::all => Vulkan + Metal + DX12 + Browser WebGPU
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         dx12_shader_compiler: Default::default(),
     });
     
-    // # Safety
-    //
-    // The surface needs to live as long as the window that created it.
-    // State owns the window so this should be safe.
     let surface = unsafe { instance.create_surface(&window) }.unwrap();
 
     let adapter = instance.request_adapter(
@@ -157,9 +178,7 @@ pub async fn new(window: &Window) -> Renderer {
     ).await.unwrap();
 
     let surface_caps = surface.get_capabilities(&adapter);
-    // Shader code in this tutorial assumes an sRGB surface texture. Using a different
-    // one will result all the colors coming out darker. If you want to support non
-    // sRGB surfaces, you'll need to account for that when drawing to the frame.
+
     let surface_format = surface_caps.formats.iter()
         .copied()
         .filter(|f| f.describe().srgb)
@@ -180,7 +199,8 @@ pub async fn new(window: &Window) -> Renderer {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
     });
-    let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+
+    
 
     let render_pipeline_layout =
     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -194,38 +214,106 @@ pub async fn new(window: &Window) -> Renderer {
         layout: Some(&render_pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: "vs_main", // 1.
-            buffers: &[Vertex::desc()], // 2.
+            entry_point: "vs_main",
+            buffers: &[Vertex::desc()],
         },
-        fragment: Some(wgpu::FragmentState { // 3.
+        fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState { // 4.
+            targets: &[Some(wgpu::ColorTargetState {
                 format: config.format,
                 blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList, // 1.
+            topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw, // 2.
+            front_face: wgpu::FrontFace::Ccw,
             cull_mode: Some(wgpu::Face::Back),
-            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
             polygon_mode: wgpu::PolygonMode::Fill,
-            // Requires Features::DEPTH_CLIP_CONTROL
             unclipped_depth: false,
-            // Requires Features::CONSERVATIVE_RASTERIZATION
             conservative: false,
         },
-        depth_stencil: None, // 1.
+        depth_stencil: None,
         multisample: wgpu::MultisampleState {
-            count: 1, // 2.
-            mask: !0, // 3.
-            alpha_to_coverage_enabled: false, // 4.
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
         },
-        multiview: None, // 5.
+        multiview: None,
     });
+
+    let diffuse_bytes = include_bytes!("happy-tree.png");
+    let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
+    let diffuse_rgba = diffuse_image.to_rgba8();
+
+    use image::GenericImageView;
+    let dimensions = diffuse_image.dimensions();
+
+    let texture_size = wgpu::Extent3d {
+        width: dimensions.0,
+        height: dimensions.1,
+        depth_or_array_layers: 1,
+    };
+
+    let diffuse_texture = device.create_texture(
+        &wgpu::TextureDescriptor {
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: Some("diffuse_texture"),
+            view_formats: &[],
+        }
+    );
+
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &diffuse_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &diffuse_rgba,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: std::num::NonZeroU32::new(4 * dimensions.0),
+            rows_per_image: std::num::NonZeroU32::new(dimensions.1),
+        },
+        texture_size,
+    );
+    
+    let diffuse_texture_view = diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Nearest,
+        ..Default::default()
+    });
+
+    // let diffuse_bind_group = device.create_bind_group(
+    //     &wgpu::BindGroupDescriptor {
+    //         layout: &texture_bind_group_layout,
+    //         entries: &[
+    //             wgpu::BindGroupEntry {
+    //                 binding: 0,
+    //                 resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+    //             },
+    //             wgpu::BindGroupEntry {
+    //                 binding: 1,
+    //                 resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+    //             }
+    //         ],
+    //         label: Some("diffuse_bind_group"),
+    //     }
+    // );
 
     Renderer {
         instance,
@@ -235,7 +323,8 @@ pub async fn new(window: &Window) -> Renderer {
         queue,
         config,
         size,
-        render_pipeline
+        render_pipeline,
+        // diffuse_bind_group
     }
 }
 }

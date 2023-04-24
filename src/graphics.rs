@@ -3,11 +3,12 @@
 pub struct Vertex {
     position: [f32; 3],
     color: [f32; 3],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBS: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 
     pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
@@ -53,12 +54,13 @@ impl RectangleBuilder {
     }
 
     pub fn build(self) -> Rectangle {
+        
         Rectangle {
             vertices: [
-                Vertex { position: [self.x,self.y, self.depth], color: self.color}, 
-                Vertex { position: [self.x,self.y+self.height, self.depth], color: self.color}, 
-                Vertex { position: [self.x+self.width, self.y, self.depth], color: self.color}, 
-                Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color}, 
+                Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: [0.0, 1.0]}, 
+                Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: [0.0, 0.0]}, 
+                Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: [1.0, 1.0]}, 
+                Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: [1.0, 0.0]}, 
             ]
         }
     }
