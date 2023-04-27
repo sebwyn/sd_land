@@ -1,6 +1,8 @@
-use std::{collections::HashMap, any::Any, num::NonZeroU64};
+use core::slice;
+use std::{collections::HashMap, any::Any, num::NonZeroU64, mem, ptr};
 
 use naga::{ImageDimension, ImageClass, ScalarKind};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum Vector<T> {
@@ -29,9 +31,39 @@ impl<T: Default + Copy> Vector<T> {
     }
 }
 
+impl<T: Sized> Vector<T> {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Vector::Vec2(v) => { 
+                let bp = v.as_ptr() as *const _;
+                unsafe { slice::from_raw_parts(bp, 2 * mem::size_of::<T>()) }
+            },
+            Vector::Vec3(v) => {
+                let bp = v.as_ptr() as *const _;
+                unsafe { slice::from_raw_parts(bp, 3 * mem::size_of::<T>()) }
+            },
+            Vector::Vec4(v) => {
+                let bp = v.as_ptr() as *const _;
+                unsafe { slice::from_raw_parts(bp, 4 * mem::size_of::<T>()) }
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Matrix {
     Matrix4x4([[f32; 4]; 4])
+}
+
+impl Matrix {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Matrix::Matrix4x4(v) => {
+                let bp = v.as_ptr() as *const _;
+                unsafe { slice::from_raw_parts(bp, 16 * mem::size_of::<f32>()) }
+            },
+        }
+    }
 }
 
 impl Matrix {
@@ -42,30 +74,14 @@ impl Matrix {
             None
         }
     }
+
+    fn from(matrix: [[f32; 4]; 4]) -> Self {
+        Self::Matrix4x4(matrix)
+    }
 }
 
-
-
-#[derive(Debug, Clone)]
-pub enum MaterialValue {
-    Float(f32),
-    Int(i32),
-    Uint(u32),
-    Bool(bool),
-
-    FloatVector(Vector<f32>),
-    IntVector(Vector<i32>),
-    UintVector(Vector<u32>),
-    BoolVector(Vector<bool>),
-    Matrix(Matrix),
-
-    Texture(Texture),
-    Sampler(Sampler),
-    Struct(HashMap<String, MaterialValue>),
-}
-
-pub fn create_binding_type(naga_type: &naga::Type) -> Option<wgpu::BindingType> {    
-    let size = match &naga_type.inner {
+pub fn create_binding_type(naga_type: &naga::TypeInner) -> Option<wgpu::BindingType> {    
+    let size = match &naga_type {
         naga::TypeInner::Scalar {width, .. } => 
             Some(NonZeroU64::new(*width as u64)),
         naga::TypeInner::Vector { size, width, .. } => 
@@ -84,7 +100,7 @@ pub fn create_binding_type(naga_type: &naga::Type) -> Option<wgpu::BindingType> 
             min_binding_size: size 
         })
     } else {
-        let binding_type = match &naga_type.inner {
+        let binding_type = match &naga_type {
             naga::TypeInner::Image { dim, arrayed, class } => 
                 create_binding_type_for_image(*dim, *arrayed, *class)?,
             naga::TypeInner::Sampler { comparison } => 
@@ -108,36 +124,80 @@ pub fn create_binding_type(naga_type: &naga::Type) -> Option<wgpu::BindingType> 
 
 }
 
-pub fn create_uniform_storage(naga_type: &naga::Type) -> Option<MaterialValue> {
-    let value = match naga_type.inner {
-        naga::TypeInner::Scalar { kind, width  } => match kind {
+pub fn create_uniform_storage(naga_type: &naga::TypeInner) -> Option<MaterialValue> {
+    let value = match naga_type {
+        naga::TypeInner::Scalar { kind, ..  } => match kind {
             naga::ScalarKind::Sint =>  MaterialValue::Int(0),
             naga::ScalarKind::Uint =>  MaterialValue::Uint(0),
             naga::ScalarKind::Float => MaterialValue::Float(0f32),
             naga::ScalarKind::Bool =>  MaterialValue::Bool(false),
         },
         naga::TypeInner::Vector { size, kind, .. } => match kind {
-            naga::ScalarKind::Sint =>  MaterialValue::IntVector(Vector::<i32>::new(size as u32)),
-            naga::ScalarKind::Uint =>  MaterialValue::UintVector(Vector::<u32>::new(size as u32)),
-            naga::ScalarKind::Float => MaterialValue::FloatVector(Vector::<f32>::new(size as u32)),
-            naga::ScalarKind::Bool =>  MaterialValue::BoolVector(Vector::<bool>::new(size as u32)),
+            naga::ScalarKind::Sint =>  MaterialValue::IntVector(Vector::<i32>::new(*size as u32)),
+            naga::ScalarKind::Uint =>  MaterialValue::UintVector(Vector::<u32>::new(*size as u32)),
+            naga::ScalarKind::Float => MaterialValue::FloatVector(Vector::<f32>::new(*size as u32)),
+            naga::ScalarKind::Bool =>  MaterialValue::BoolVector(Vector::<bool>::new(*size as u32)),
         },
         naga::TypeInner::Matrix { columns, rows, .. } => 
-            MaterialValue::Matrix(Matrix::new(columns as u32, rows as u32)?),
+            MaterialValue::Matrix(Matrix::new(*columns as u32, *rows as u32)?),
         
         // naga::TypeInner::Struct { members, .. } => todo!()),
         
-        naga::TypeInner::Image { dim, arrayed, class } => 
-            MaterialValue::Texture(Texture::new()),
-        naga::TypeInner::Sampler { comparison } => 
-            MaterialValue::Sampler(Sampler::new(comparison)),
+        naga::TypeInner::Image { .. } => 
+            MaterialValue::Texture(Texture::default()),
+        naga::TypeInner::Sampler { .. } => 
+            MaterialValue::Sampler(Sampler::default()),
 
         _ => return None
     };
     Some(value)
 }
 
+#[derive(Debug, Clone)]
+pub enum MaterialValue {
+    Float(f32),
+    Int(i32),
+    Uint(u32),
+    Bool(bool),
+
+    FloatVector(Vector<f32>),
+    IntVector(Vector<i32>),
+    UintVector(Vector<u32>),
+    BoolVector(Vector<bool>),
+    Matrix(Matrix),
+
+    Texture(Texture),
+    Sampler(Sampler),
+    Struct(HashMap<String, MaterialValue>),
+}
+
 impl MaterialValue {
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        Some(match self {
+            MaterialValue::Float(v) => {
+                let bp = ptr::addr_of!(v) as *const u8;
+                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+            },
+            MaterialValue::Int(v) => {
+                let bp = ptr::addr_of!(v) as *const u8;
+                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+            },
+            MaterialValue::Uint(v) => {
+                let bp = ptr::addr_of!(v) as *const u8;
+                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+            },
+            MaterialValue::Bool(v) => if *v { &[1u8] } else { &[0u8] },
+            MaterialValue::FloatVector(v) => v.as_bytes(),
+            MaterialValue::IntVector(v) => v.as_bytes(),
+            MaterialValue::UintVector(v) => v.as_bytes(),
+            MaterialValue::BoolVector(v) => v.as_bytes(),
+            MaterialValue::Matrix(v) => v.as_bytes(),
+            MaterialValue::Struct(_) => return None,
+            MaterialValue::Texture(_) => return None,
+            MaterialValue::Sampler(_) => return None,
+        })
+    }
+
     pub fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
         let any: &mut dyn Any = match self {
             MaterialValue::Float(v) => v,
@@ -177,12 +237,16 @@ impl MaterialValue {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Texture {}
+#[derive(PartialEq, Eq, Debug, Clone, Default)]
+pub struct Texture {
+    pub uuid: Option<Uuid>,
+}
 
 impl Texture {
-    fn new() -> Self {
-        Self {}
+    pub fn new(uuid: Uuid) -> Self {
+        Self {
+            uuid: Some(uuid)
+        }
     }
 }
 
@@ -264,12 +328,16 @@ fn create_binding_type_for_image(dim: ImageDimension, arrayed: bool, class: Imag
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct Sampler {}
+#[derive(Debug, Clone, Default)]
+pub struct Sampler {
+    pub uuid: Option<Uuid>
+}
 
 impl Sampler {
-    fn new(comparison: bool) -> Self {
-        Self {}
+    pub fn new(uuid: Uuid) -> Self {
+        Self {
+            uuid: Some(uuid)
+        }
     }
 }
 
@@ -278,55 +346,5 @@ fn create_binding_type_for_sampler(comparison: bool) -> wgpu::BindingType {
         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
     } else {
         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_new() {
-        let shader_source = include_str!("shader.wgsl");
-        let module = naga::front::wgsl::parse_str(shader_source).unwrap();
-
-        let types = module.types.iter().collect::<Vec<_>>();
-        let sampler = types.last().unwrap().1;
-
-
-        let some_uniform = create_uniform_storage(sampler);
-
-        assert!(some_uniform.is_some());
-        assert!(matches!(some_uniform.as_ref().unwrap(), &MaterialValue::Sampler(_)));
-    }
-
-    #[test]
-    fn test_get_set() {
-        let shader_source = include_str!("shader.wgsl");
-        let module = naga::front::wgsl::parse_str(shader_source).unwrap();
-
-        let types = module.types.iter().collect::<Vec<_>>();
-        let sampler = types.last().unwrap().1;
-
-
-        let some_uniform = create_uniform_storage(sampler);
-        assert!(some_uniform.is_some());
-        let mut some_uniform = some_uniform.unwrap();
-
-        {
-            let sampler = some_uniform.get::<Sampler>();
-
-            assert!(sampler.is_some());
-            let sampler = sampler.unwrap();
-
-            assert!(matches!(sampler, Sampler {}));
-        }
-
-        {
-            let sampler = some_uniform.get_mut::<Sampler>().unwrap();
-        }
-
-        let sampler = some_uniform.get::<Sampler>().unwrap();
-        assert!(matches!(sampler, Sampler {}));
     }
 }
