@@ -29,12 +29,13 @@ pub struct RectangleBuilder {
     width: f32, 
     height: f32, 
     depth: f32, 
-    color: [f32; 3]
+    color: [f32; 3],
+    tex_coords: [[f32; 2]; 4]
 }
 
 impl Default for RectangleBuilder {
     fn default() -> Self {
-        Self { x: 0.0, y: 0.0, width: 1.0, height: 1.0, depth: 0.0, color: [1.0, 1.0, 1.0] }
+        Self { x: 0.0, y: 0.0, width: 1.0, height: 1.0, depth: 0.0, color: [1.0, 1.0, 1.0], tex_coords: [[0.0, 1.0], [0.0, 0.0], [1.0, 1.0], [1.0, 0.0]] }
     }
 }
 
@@ -55,14 +56,18 @@ impl RectangleBuilder {
         self.color = color; self
     }
 
+    pub fn tex_coords(mut self, tex_coords: [[f32; 2]; 4]) -> Self {
+        self.tex_coords = tex_coords; self
+    }
+
     pub fn build(self) -> Rectangle {
         
         Rectangle {
             vertices: [
-                Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: [0.0, 1.0]}, 
-                Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: [0.0, 0.0]}, 
-                Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: [1.0, 1.0]}, 
-                Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: [1.0, 0.0]}, 
+                Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[0] }, 
+                Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[1] }, 
+                Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[2] }, 
+                Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[3] }, 
             ]
         }
     }

@@ -5,15 +5,25 @@ use winit::{
     window::WindowBuilder,
 };
 
-use crate::{renderer::Renderer, graphics::{RectangleBuilder, Vertex}, pipeline::Pipeline, shader_types::{Texture, Sampler}};
+use crate::{
+    graphics::{RectangleBuilder, Vertex},
+    pipeline::Pipeline,
+    renderer::Renderer,
+    shader_types::{Sampler, Texture}, text::TextBoxFactory,
+};
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World) {
-    let pipeline = renderer.create_pipeline(Pipeline::load::<Vertex>(include_str!("shader.wgsl")).unwrap());
+    let text_factory = TextBoxFactory::new(renderer).unwrap();
+    
+    let pipeline =
+        renderer.create_pipeline(Pipeline::load::<Vertex>(include_str!("shader.wgsl")).unwrap());
 
     let material = renderer.create_material(pipeline).unwrap();
 
-    let texture = renderer.create_texture("src/happy-tree.png");
-    if !renderer.update_material(material, "t_diffuse", Texture::new(texture)) { panic!("Failed to update t_diffuse!")}
+    let texture = renderer.load_texture("src/happy-tree.png").unwrap();
+    if !renderer.update_material(material, "t_diffuse", Texture::new(texture)) {
+        panic!("Failed to update t_diffuse!")
+    }
 
     let sampler = renderer.create_sampler();
     renderer.update_material(material, "s_diffuse", Sampler::new(sampler));
@@ -28,8 +38,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World) {
         .size(0.5, 0.5)
         .build();
 
-    world.push((rectangle, material));
-    world.push((rectangle_2, material));
+    world.extend(text_factory.create());
 }
 
 pub fn run() {
@@ -48,7 +57,9 @@ pub fn run() {
             window_id,
         } if window_id == window.id() => match event {
             WindowEvent::Resized(new_size) => renderer.resize(*new_size),
-            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => renderer.resize(**new_inner_size),
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                renderer.resize(**new_inner_size)
+            }
             WindowEvent::CloseRequested
             | WindowEvent::KeyboardInput {
                 input:
@@ -71,10 +82,10 @@ pub fn run() {
                 // All other errors (Outdated, Timeout) should be resolved by the next frame
                 Err(e) => eprintln!("{:?}", e),
             }
-        },
+        }
         Event::MainEventsCleared => {
             window.request_redraw();
-        },
+        }
         _ => {}
     });
 }

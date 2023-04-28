@@ -1,5 +1,6 @@
-use std::{borrow::Cow, collections::HashMap, num::NonZeroU64};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref};
 
+use image::ImageBuffer;
 use legion::{World, IntoQuery};
 use simple_error::SimpleError;
 use uuid::Uuid;
@@ -102,10 +103,25 @@ impl Renderer {
         self.graphics.resize(new_size);
     }
 
-    pub fn create_texture(&mut self, file: &str) -> TextureHandle {
+    pub fn load_texture(&mut self, file: &str) -> Result<TextureHandle, SimpleError> {
         let uuid = Uuid::new_v4();
-        self.textures.insert(uuid, self.graphics.create_texture(file));
-        uuid
+
+        let diffuse_bytes = std::fs::read(file).expect("Can't read texture file");
+        let diffuse_image = image::load_from_memory(&diffuse_bytes).unwrap();
+        let diffuse_rgba = diffuse_image.to_rgba8();
+
+        self.textures.insert(uuid, self.graphics.create_texture(diffuse_rgba)?);
+        Ok(uuid)
+    }
+
+    pub fn create_texture<P, S>(&mut self, image: ImageBuffer<P, S>) -> Result<TextureHandle, SimpleError> 
+    where 
+        P: image::Pixel<Subpixel = u8>,
+        S: Deref<Target = [<P as image::Pixel>::Subpixel]>,
+    {
+        let uuid = Uuid::new_v4();
+        self.textures.insert(uuid, self.graphics.create_texture(image)?);
+        Ok(uuid)
     }
 
     pub fn create_sampler(&mut self, ) -> SamplerHandle {
@@ -120,8 +136,10 @@ impl Renderer {
         uuid
     }
 
-    pub fn create_material(&mut self, pipeline_handle: PipelineHandle) -> Option<MaterialHandle> {
-        let pipeline = &self.pipelines.get(&pipeline_handle).as_ref()?.0;
+    pub fn create_material(&mut self, pipeline_handle: PipelineHandle) -> Result<MaterialHandle, SimpleError> {
+        let pipeline = &self.pipelines.get(&pipeline_handle)
+            .as_ref()
+            .ok_or(SimpleError::new("Could not find pipeline to create material from!"))?.0;
         let uuid = Uuid::new_v4();
         
         let cpu_storage = pipeline.new_material();
@@ -133,7 +151,7 @@ impl Renderer {
         };
 
         self.materials.insert(uuid, material_info);
-        Some(uuid)
+        Ok(uuid)
     }
 
     pub fn update_material<T: 'static>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> bool {
@@ -262,14 +280,18 @@ impl Graphics {
 }
 
 impl Graphics {
-fn create_texture(&self, file: &str) -> wgpu::Texture {
+fn create_texture<P, S>(&self, image: ImageBuffer<P, S>) -> Result<wgpu::Texture, SimpleError>
+where 
+    P: image::Pixel<Subpixel = u8>,
+    S: Deref<Target = [<P as image::Pixel>::Subpixel]>,
+{
+    let format = match P::CHANNEL_COUNT {
+        1 => wgpu::TextureFormat::R8Unorm,
+        4 => wgpu::TextureFormat::Rgba8UnormSrgb,
+        _ => return Err(SimpleError::new("Could not create texture of that format!"))
+    };
 
-    let diffuse_bytes = std::fs::read(file).expect("Can't read texture file");
-    let diffuse_image = image::load_from_memory(&diffuse_bytes).unwrap();
-    let diffuse_rgba = diffuse_image.to_rgba8();
-
-    use image::GenericImageView;
-    let dimensions = diffuse_image.dimensions();
+    let dimensions = image.dimensions();
 
     let texture_size = wgpu::Extent3d {
         width: dimensions.0,
@@ -283,7 +305,7 @@ fn create_texture(&self, file: &str) -> wgpu::Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             label: Some("diffuse_texture"),
             view_formats: &[],
@@ -297,16 +319,16 @@ fn create_texture(&self, file: &str) -> wgpu::Texture {
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        &diffuse_rgba,
+        &image,
         wgpu::ImageDataLayout {
             offset: 0,
-            bytes_per_row: std::num::NonZeroU32::new(4 * dimensions.0),
+            bytes_per_row: std::num::NonZeroU32::new(P::CHANNEL_COUNT as u32 * dimensions.0),
             rows_per_image: std::num::NonZeroU32::new(dimensions.1),
         },
         texture_size,
     );
 
-    diffuse_texture
+    Ok(diffuse_texture)
 }
 
 fn create_sampler(&self) -> wgpu::Sampler {
@@ -468,7 +490,7 @@ fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
             //TODO: implement in material
             targets: &[Some(wgpu::ColorTargetState {
                 format: self.config.format,
-                blend: Some(wgpu::BlendState::REPLACE),
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),

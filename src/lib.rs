@@ -6,3 +6,4 @@ pub mod renderer;
 pub mod pipeline;
 pub mod shader_types;
 pub mod material;
+pub mod text;
