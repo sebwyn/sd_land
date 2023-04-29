@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant};
 
 use image::ImageBuffer;
 use legion::{World, IntoQuery};
@@ -19,6 +19,7 @@ pub struct Renderer {
     graphics: Graphics
 }
 
+
 pub type TextureHandle = Uuid;
 pub type SamplerHandle = Uuid;
 pub type PipelineHandle = Uuid;
@@ -37,62 +38,126 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
-        let mut query = <(&MaterialHandle, &Rectangle)>::query();
+    #[inline]
+    fn all_materials<'a>(query_vec: &[(&'a MaterialHandle, &Rectangle, &RenderStage)]) -> Vec<&'a MaterialHandle> {
+        let mut all_materials = Vec::new();
+        
+        for (material, rect, stage) in query_vec {
+            all_materials.push(*material);
+        }
 
-        let mut rects_by_material = HashMap::new();
+        all_materials.sort();
+        all_materials.dedup();
 
-        for (material, rect) in query.iter(world) {
-            rects_by_material.entry(material.clone())
+        all_materials
+    }
+
+    #[inline]
+    fn primitive_by_stage_by_material<'a, 'b>(query_vec: &[(&'b MaterialHandle, &'a Rectangle, &RenderStage)]) 
+        -> Option<Vec<HashMap<&'b MaterialHandle, Vec<&'a Rectangle>>>>
+    {
+        let mut rects_by_stage_by_material = Vec::new();
+        rects_by_stage_by_material.push(HashMap::new());
+
+        let mut current_stage = 
+        if let Some(first) = query_vec.first()
+            { first.2.order } else { return None };
+
+        //order by stage and then by material
+        for (material, rect, stage) in query_vec {
+            if stage.order != current_stage {
+                current_stage = stage.order;
+                rects_by_stage_by_material.push(HashMap::new());
+            }
+            
+            rects_by_stage_by_material
+                .last_mut()
+                .unwrap()
+                .entry(material.clone())
                 .and_modify(|v: &mut Vec<&Rectangle>| v.push(rect))
                 .or_insert(vec![rect]);
         }
 
-        for (material, rect) in rects_by_material.iter() {
-            { //update the bind groups if necessary
-                let material_info = self.materials.get(material).unwrap();
-                if material_info.dirty || material_info.bind_groups.is_none() {
-                    let updated_bind_groups = self.create_bind_groups(material).unwrap();
+        Some(rects_by_stage_by_material)
+    }
 
-                    drop(material_info);
-                    let material_info = self.materials.get_mut(material).unwrap();
-                    material_info.bind_groups = Some(updated_bind_groups);
-                    material_info.dirty = false;
-                }
+    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
+        let start = Instant::now();
+        
+        let mut query = <(&MaterialHandle, &Rectangle, &RenderStage)>::query();
+
+        let mut query_vec = query.iter(world).collect::<Vec<_>>();
+        query_vec.sort_by(|(_, _, stage_1), (_, _, stage_2)| stage_1.order.cmp(&stage_2.order));
+        
+        let all_materials = Self::all_materials(&query_vec);
+        
+        for material in all_materials.iter() {
+            let material_info = self.materials.get(material).unwrap();
+            if material_info.dirty || material_info.bind_groups.is_none() {
+                let updated_bind_groups = self.create_bind_groups(material).unwrap();
+
+                drop(material_info);
+
+                let material_info = self.materials.get_mut(material).unwrap();
+                material_info.bind_groups = Some(updated_bind_groups);
+                material_info.dirty = false;
+            }
+        }
+
+        let rects_by_stage_by_material = Self::primitive_by_stage_by_material(&query_vec);
+        if rects_by_stage_by_material.is_none() { return Ok(()) }
+        let rects_by_stage_by_material = rects_by_stage_by_material.unwrap();
+
+        for rects_by_material in rects_by_stage_by_material.iter() {
+            let mut render_tasks = Vec::new();
+            for (material, rectangles) in rects_by_material.iter() {
+            
+                let material_info = match self.materials.get(material) {
+                    Some(material) => material,
+                    None => continue,
+                };
+
+                //create all the vertices and all that
+                let vertices = rectangles
+                    .iter()
+                    .map(|rect| rect.vertices)
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                let num_rectangles = vertices.len() / 4;
+                let indices = (0..num_rectangles)
+                    .into_iter()
+                    .map(|i| 
+                        Rectangle::INDICES.iter()
+                        .map(move |e| *e + (i * 4) as u32))
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                let vertex_buffer = self.graphics.create_vertex_buffer(&vertices);
+                let index_buffer = self.graphics.create_index_buffer(&indices);
+                let num_indices = indices.len() as u32;
+
+                let pipeline = &self.pipelines.get(&material_info.pipeline).as_ref().unwrap().1.pipeline;
+
+                render_tasks.push(RenderWork {
+                    pipeline, 
+                    bind_groups: material_info.bind_groups.as_ref().unwrap(), 
+                    vertex_buffer, 
+                    index_buffer, 
+                    num_indices
+                });
             }
 
-            let material_info = match self.materials.get(material) {
-                Some(material) => material,
-                None => continue,
-            };
-
-            //create all the vertices and all that
-            let vertices = rect
-                .iter()
-                .map(|rect| rect.vertices)
-                .flatten()
-                .collect::<Vec<_>>();
-
-            let num_rectangles = vertices.len() / 4;
-            let indices = (0..num_rectangles)
-                .into_iter()
-                .map(|i| 
-                    Rectangle::INDICES.iter()
-                    .map(move |e| *e + (i * 4) as u32))
-                .flatten()
-                .collect::<Vec<_>>();
-
-            let vertex_buffer = self.graphics.create_vertex_buffer(&vertices);
-            let index_buffer = self.graphics.create_index_buffer(&indices);
-            let num_indices = indices.len() as u32;
-
-            let pipeline = &self.pipelines.get(&material_info.pipeline).as_ref().unwrap().1.pipeline;
-
-            self.graphics.render(pipeline, material_info.bind_groups.as_ref().unwrap(), &vertex_buffer, &index_buffer, num_indices)?;
+            self.graphics.render(render_tasks)?;
         }
-        
+
+        let elapsed = start.elapsed();
+        if elapsed.as_millis() > 16 {
+            println!("Rendering took: {}", elapsed.as_millis());
+        }
+
         Ok(())
-        // self.graphics.render(pipeline, vertex_buffer, index_buffer, num_indices)
+
     }
 
     pub fn find_display(&mut self) {
@@ -192,6 +257,10 @@ impl Renderer {
     } 
 }
 
+pub struct RenderStage {
+    pub order: u32,
+}
+
 struct MaterialInfo {
     pipeline: PipelineHandle,
     cpu_storage: Material,
@@ -204,6 +273,14 @@ struct LoadedPipeline {
     bind_group_layouts: Vec<(u32, BindGroupLayout)>,
 }
 
+pub struct RenderWork<'a> {
+    pipeline: &'a RenderPipeline,
+    bind_groups: &'a [BindGroup], 
+    vertex_buffer: Buffer, 
+    index_buffer: Buffer, 
+    num_indices: u32
+}
+
 pub struct Graphics {
     _instance: Instance,
     surface: Surface,
@@ -212,15 +289,12 @@ pub struct Graphics {
     queue: Queue,
     config: SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
 }
 
 impl Graphics {
     fn render(&mut self, 
-        pipeline: &RenderPipeline,
-        bind_groups: &[BindGroup], 
-        vertex_buffer: &Buffer, 
-        index_buffer: &Buffer, 
-        num_indices: u32
+        work: Vec<RenderWork>,
     )  -> Result<(), wgpu::SurfaceError> {
         
         let output = self.surface.get_current_texture()?;
@@ -246,16 +320,26 @@ impl Graphics {
                         store: true,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.1,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
-            render_pass.set_pipeline(pipeline);
-            for (i, bind_group) in bind_groups.into_iter().enumerate() {
-                render_pass.set_bind_group(i as u32, bind_group, &[]);
+            for task in work.iter() {
+                render_pass.set_pipeline(task.pipeline);
+
+                for (i, bind_group) in task.bind_groups.into_iter().enumerate() {
+                    render_pass.set_bind_group(i as u32, bind_group, &[]);
+                }
+                render_pass.set_vertex_buffer(0, task.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(task.index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
+                render_pass.draw_indexed(0..task.num_indices, 0, 0..1); // 2.     
             }
-            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
-            render_pass.draw_indexed(0..num_indices, 0, 0..1); // 2.
         }
     
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -270,6 +354,7 @@ impl Graphics {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.depth_texture = Self::create_depth_texture(&self.device, &self.config, "Some depth texture");
         }
     }
 }
@@ -507,7 +592,13 @@ fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         },
 
         //TODO: implement in material
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: Self::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less, // 1.
+            stencil: wgpu::StencilState::default(), // 2.
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState {
             count: 1,
             mask: !0,
@@ -601,6 +692,8 @@ async fn new(window: &Window) -> Graphics {
     };
     surface.configure(&device, &config);
 
+    let depth_texture = Self::create_depth_texture(&device, &config, "Some depth texture");
+
     Graphics {
         _instance: instance,
         surface,
@@ -609,6 +702,50 @@ async fn new(window: &Window) -> Graphics {
         queue,
         config,
         size,
+        depth_texture
     }
 }
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
+    
+fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str) 
+-> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) 
+{
+    let size = wgpu::Extent3d { // 2.
+        width: config.width,
+        height: config.height,
+        depth_or_array_layers: 1,
+    };
+    let desc = wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: Self::DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT // 3.
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    };
+    let texture = device.create_texture(&desc);
+
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(
+        &wgpu::SamplerDescriptor { // 4.
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual), // 5.
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        }
+    );
+
+    (texture, view, sampler)
+}
+
 }

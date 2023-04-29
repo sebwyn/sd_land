@@ -7,3 +7,4 @@ pub mod pipeline;
 pub mod shader_types;
 pub mod material;
 pub mod text;
+pub mod ui_box;

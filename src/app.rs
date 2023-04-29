@@ -6,39 +6,18 @@ use winit::{
 };
 
 use crate::{
-    graphics::{RectangleBuilder, Vertex},
-    pipeline::Pipeline,
-    renderer::Renderer,
-    shader_types::{Sampler, Texture}, text::TextBoxFactory,
+    renderer::Renderer, 
+    text::TextBoxFactory, ui_box::UiBoxFactory,
 };
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World) {
     let text_factory = TextBoxFactory::new(renderer).unwrap();
-    
-    let pipeline =
-        renderer.create_pipeline(Pipeline::load::<Vertex>(include_str!("shader.wgsl")).unwrap());
+    let text_components = text_factory.create("fn main() -> String {}", (0f32, 0f32), 0.1);
+    world.extend(text_components);
 
-    let material = renderer.create_material(pipeline).unwrap();
-
-    let texture = renderer.load_texture("src/happy-tree.png").unwrap();
-    if !renderer.update_material(material, "t_diffuse", Texture::new(texture)) {
-        panic!("Failed to update t_diffuse!")
-    }
-
-    let sampler = renderer.create_sampler();
-    renderer.update_material(material, "s_diffuse", Sampler::new(sampler));
-
-    let rectangle = RectangleBuilder::default()
-        .position(-0.5, -0.5)
-        .size(0.5, 0.5)
-        .build();
-
-    let rectangle_2 = RectangleBuilder::default()
-        .position(-0.0, -0.0)
-        .size(0.5, 0.5)
-        .build();
-
-    world.extend(text_factory.create());
+    let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
+    let ui_box = ui_box_factory.create("#122630",(0f32, 0f32), (0.5, 0.5), 0.9).unwrap();
+    world.push(ui_box);
 }
 
 pub fn run() {

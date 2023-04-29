@@ -4,7 +4,7 @@ use fontdue::Metrics;
 use image::Luma;
 use simple_error::SimpleError;
 
-use crate::{renderer::{MaterialHandle, Renderer}, pipeline::Pipeline, graphics::{Vertex, Rectangle, RectangleBuilder}, shader_types::{Texture, Sampler}};
+use crate::{renderer::{MaterialHandle, Renderer, RenderStage}, pipeline::Pipeline, graphics::{Vertex, Rectangle, RectangleBuilder}, shader_types::{Texture, Sampler}};
 
 use font_loader::system_fonts;
 
@@ -13,6 +13,7 @@ type TexCoords = [[f32; 2]; 4];
 pub struct Font {
     characters: HashMap<char, (TexCoords, Metrics)>,
     texture: Texture,
+    font: fontdue::Font,
 }
 
 impl Font {
@@ -38,10 +39,10 @@ impl Font {
 
         let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default()).unwrap();
 
-        let width = 123u32 - 97u32;
+        let width = 127u32 - 32u32;
 
         let mut char_data = Vec::new();
-        for c in 97u8..123 {
+        for c in 32u8..127 {
             let c = c as char;
             let (metrics, bitmap) = font.rasterize(c, 50f32);
             char_data.push((c, metrics, bitmap));
@@ -77,7 +78,7 @@ impl Font {
                 }
             });
 
-        font_image.save("font.jpg").unwrap();
+        font_image.save("font.jpg");
 
         let texture = Texture::new(renderer.create_texture(font_image).unwrap());
         
@@ -96,6 +97,7 @@ impl Font {
         Ok(Self {
             characters,
             texture,
+            font
         })
     }
 
@@ -113,10 +115,11 @@ impl Font {
         [[left, bottom], [left, top], [right, bottom], [right, top]]
     }
 
-    fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32) -> Result<Vec<Rectangle>, SimpleError> {
+    fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<Vec<Rectangle>, SimpleError> {
         let mut rectangles = Vec::new();
-        for c in text.chars() {
-            let (tex_coords, metrics) = self.characters.get(&c)
+        let characters = text.chars().collect::<Vec<_>>();
+        for (i, c) in characters.iter().enumerate() {
+            let (tex_coords, metrics) = self.characters.get(c)
                 .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?;
             
             //get the bottom left position 
@@ -129,8 +132,15 @@ impl Font {
                 .position(left, bottom)
                 .size(width, height)
                 .tex_coords(*tex_coords)
+                .depth(depth)
                 .build());
 
+            if let Some(next_character) = characters.get(i + 1) {
+                if let Some(kerning) = self.font.horizontal_kern(*c, *next_character, 1f32) {
+                    origin.0 += (metrics.advance_width + kerning) * scale;
+                    continue
+                }
+            }
             origin.0 += metrics.advance_width * scale;
         }
 
@@ -139,7 +149,6 @@ impl Font {
 
 }
 
-
 pub struct TextBoxFactory {
     material_handle: MaterialHandle,
     font: Font,
@@ -147,7 +156,7 @@ pub struct TextBoxFactory {
 
 impl TextBoxFactory {
     pub fn new(renderer: &mut Renderer) -> Result<Self, SimpleError> {
-        let font = Font::load(renderer,"FiraCode Nerd Font")?;
+        let font = Font::load(renderer,"Arial")?;
 
 
         let text_pipeline = Pipeline::load::<Vertex>(include_str!("text_shader.wgsl"))?;
@@ -165,10 +174,10 @@ impl TextBoxFactory {
         })
     }
 
-    pub fn create(&self) -> Vec<(Rectangle, MaterialHandle)> {    
-        self.font.layout_text("helloworld", (0.0, 0.0), 0.001).unwrap()
+    pub fn create(&self, text: &str, position: (f32, f32), depth: f32) -> Vec<(Rectangle, MaterialHandle, RenderStage)> {    
+        self.font.layout_text(text, position, 0.001, depth).unwrap()
             .into_iter()
-            .map(|rect| (rect, self.material_handle))
+            .map(|rect| (rect, self.material_handle, RenderStage { order: 1 }))
             .collect::<Vec<_>>()
     }
 }
