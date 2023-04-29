@@ -7,7 +7,7 @@ use winit::{
 
 use crate::{
     renderer::Renderer, 
-    text::TextBoxFactory, ui_box::UiBoxFactory,
+    text::TextBoxFactory, ui_box::UiBoxFactory
 };
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World) {
@@ -16,8 +16,18 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World) {
     world.extend(text_components);
 
     let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
-    let ui_box = ui_box_factory.create("#122630",(0f32, 0f32), (0.5, 0.5), 0.9).unwrap();
-    world.push(ui_box);
+
+    let ui_box = 
+        ui_box_factory.create("#122630",(-0.6f32, -0.95f32), (1.2, 0.4), 0.9).unwrap();
+    let ui_box_1 = 
+        ui_box_factory.create("#122630",(-0.6f32, -0.5f32), (1.2, 0.4), 0.9).unwrap();
+    let ui_box_2 = 
+        ui_box_factory.create("#122630",(-0.6f32, -0.05f32), (1.2, 0.4), 0.9).unwrap();
+    
+    world.extend([ui_box, ui_box_1, ui_box_2]);
+
+    //create the camera
+    // let camera = Camera::new();
 }
 
 pub fn run() {
@@ -54,11 +64,8 @@ pub fn run() {
         Event::RedrawRequested(_) => {
             match renderer.render(&world) {
                 Ok(_) => {}
-                // Reconfigure the surface if lost
                 Err(wgpu::SurfaceError::Lost) => renderer.find_display(),
-                // The system is out of memory, we should probably quit
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                // All other errors (Outdated, Timeout) should be resolved by the next frame
                 Err(e) => eprintln!("{:?}", e),
             }
         }

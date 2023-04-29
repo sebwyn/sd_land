@@ -1,4 +1,4 @@
-use std::{io::Read, fs::File, collections::HashMap};
+use std::{io::Read, fs::File, collections::HashMap, cmp::Ordering};
 
 use fontdue::Metrics;
 use image::Luma;
@@ -14,6 +14,7 @@ pub struct Font {
     characters: HashMap<char, (TexCoords, Metrics)>,
     texture: Texture,
     font: fontdue::Font,
+    smallest_ymin: f32,
 }
 
 impl Font {
@@ -58,6 +59,14 @@ impl Font {
             .map(|(_, m, _)| m.width)
             .unwrap() as u32;
 
+        let smallest_ymin = char_data.iter()
+            .min_by(|(_, a, _), (_, b, _)| 
+                a.bounds.ymin.partial_cmp(&b.bounds.ymin)
+                    .unwrap_or(Ordering::Equal) 
+            )
+            .map(|(_, m, _)| m.bounds.ymin)
+            .unwrap();
+
         let font_image = image::GrayImage::from_fn((max_width * width) as u32, max_height, 
             |x, y| {
                 let in_character_x: u32 = x % max_width;
@@ -78,7 +87,7 @@ impl Font {
                 }
             });
 
-        font_image.save("font.jpg");
+        font_image.save("font.jpg").unwrap();
 
         let texture = Texture::new(renderer.create_texture(font_image).unwrap());
         
@@ -97,7 +106,8 @@ impl Font {
         Ok(Self {
             characters,
             texture,
-            font
+            font,
+            smallest_ymin
         })
     }
 
@@ -116,6 +126,8 @@ impl Font {
     }
 
     fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<Vec<Rectangle>, SimpleError> {
+        origin.1 += -self.smallest_ymin * scale;
+        
         let mut rectangles = Vec::new();
         let characters = text.chars().collect::<Vec<_>>();
         for (i, c) in characters.iter().enumerate() {

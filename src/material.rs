@@ -20,31 +20,32 @@ impl Material {
         self
     }
 
-    pub fn set_uniform<T: 'static>(&mut self, name: &str, value: T) {
+    pub fn set_uniform<T: 'static>(&mut self, name: &str, value: T) -> bool{
         if let Some((_, (..), current_value)) = self.uniforms.iter_mut()
             .find(|(uniform_name, _, _)| uniform_name == name) 
         {
             if let Some(current_value_t) = current_value.get_mut::<T>() {
                 *current_value_t = value;
+                true
             } else {
-                panic!("Shader definition of uniform ({name}) does not have that type!");
+                false
             }
         } else {
-            panic!("Shader does not have uniform: {name}");
+            false
         }
     }
 
-    pub fn get_uniform<T: 'static>(&self, name: &str) -> &T {
+    pub fn get_uniform<T: 'static>(&self, name: &str) -> Option<&T> {
         if let Some((_, (..), current_value)) = self.uniforms.iter()
             .find(|(uniform_name, _, _)| uniform_name == name) 
         {
             if let Some(current_value_t) = current_value.get::<T>() {
-                current_value_t
+                Some(current_value_t)
             } else {
-                panic!("Shader definition of uniform ({name}) does not have that type!");
+                None
             }
         } else {
-            panic!("Shader does not have uniform: {name}");
+            None
         }
     }
 }

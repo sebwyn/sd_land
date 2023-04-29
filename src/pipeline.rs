@@ -6,7 +6,7 @@ use wgpu::VertexBufferLayout;
 
 use crate::{shader_types::{create_binding_type, create_uniform_storage}, material::Material};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Uniform {
     pub binding: ResourceBinding,
     pub binding_type: wgpu::BindingType,
@@ -84,8 +84,6 @@ impl Pipeline {
                 .or_insert(vec![uniform]);
         }
 
-        //need to correct unfilterable samplers
-
         groups.into_iter().map(|(_, uniforms)| uniforms).collect::<Vec<_>>()
     }
 
@@ -148,8 +146,7 @@ impl Pipeline {
 
     fn get_variable_visibilities(shader_module: &Module) -> HashMap<Handle<GlobalVariable>, wgpu::ShaderStages> {
         let entry_points = &shader_module.entry_points;
-        // println!("{:#?}", entry_points);
-
+    
         let mut visibilities = HashMap::new();
 
         for entry_point in entry_points {
@@ -187,7 +184,6 @@ impl Pipeline {
                     ..
                 })).is_some()
             {
-                //find the sampler attached to this object and set it to be filtering
                 if let Some(sampler) = group.iter_mut().find(|e| matches!(e, wgpu::BindingType::Sampler(..))) {
                     **sampler = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
                 }

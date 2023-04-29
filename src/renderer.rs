@@ -1,13 +1,15 @@
 use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant};
+use core::fmt::Debug;
 
+use cgmath::{Matrix4, SquareMatrix};
 use image::ImageBuffer;
 use legion::{World, IntoQuery};
 use simple_error::SimpleError;
 use uuid::Uuid;
-use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, Buffer, util::DeviceExt, RenderPipeline, BindGroup, BindGroupLayout};
+use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, Buffer, util::DeviceExt, RenderPipeline, BindGroup, BindGroupLayout, CommandBuffer, SurfaceTexture, SurfaceError};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{graphics::{Rectangle, Vertex}, pipeline::Pipeline, material::Material, shader_types::MaterialValue};
+use crate::{graphics::{Rectangle, Vertex}, pipeline::Pipeline, material::Material, shader_types::{MaterialValue, Matrix}, camera::Camera};
 
 pub struct Renderer {
     textures: HashMap<Uuid, wgpu::Texture>,
@@ -42,7 +44,7 @@ impl Renderer {
     fn all_materials<'a>(query_vec: &[(&'a MaterialHandle, &Rectangle, &RenderStage)]) -> Vec<&'a MaterialHandle> {
         let mut all_materials = Vec::new();
         
-        for (material, rect, stage) in query_vec {
+        for (material, _, _) in query_vec {
             all_materials.push(*material);
         }
 
@@ -91,12 +93,22 @@ impl Renderer {
         
         let all_materials = Self::all_materials(&query_vec);
         
+        //grab the camera from the scene
+        let mut camera_query = <&Camera>::query();
+        
+        let view_proj_matrix = camera_query.iter(world).next()
+            .and_then(|cam| Some(cam.matrix())).unwrap_or(Matrix4::<f32>::identity());
+
+
         for material in all_materials.iter() {
-            let material_info = self.materials.get(material).unwrap();
+            //try and update the view_proj matrix, may fail, but that is fine
+            let matrix = Matrix::from(view_proj_matrix);
+            self.update_material(**material, "view_proj", matrix);
+            
+            let material_info = self.materials.get_mut(material).unwrap();
+            
             if material_info.dirty || material_info.bind_groups.is_none() {
                 let updated_bind_groups = self.create_bind_groups(material).unwrap();
-
-                drop(material_info);
 
                 let material_info = self.materials.get_mut(material).unwrap();
                 material_info.bind_groups = Some(updated_bind_groups);
@@ -108,6 +120,7 @@ impl Renderer {
         if rects_by_stage_by_material.is_none() { return Ok(()) }
         let rects_by_stage_by_material = rects_by_stage_by_material.unwrap();
 
+        self.graphics.begin_render([0f32, 0f32, 0f32])?;
         for rects_by_material in rects_by_stage_by_material.iter() {
             let mut render_tasks = Vec::new();
             for (material, rectangles) in rects_by_material.iter() {
@@ -117,7 +130,6 @@ impl Renderer {
                     None => continue,
                 };
 
-                //create all the vertices and all that
                 let vertices = rectangles
                     .iter()
                     .map(|rect| rect.vertices)
@@ -150,6 +162,8 @@ impl Renderer {
 
             self.graphics.render(render_tasks)?;
         }
+
+        self.graphics.flush();
 
         let elapsed = start.elapsed();
         if elapsed.as_millis() > 16 {
@@ -219,14 +233,16 @@ impl Renderer {
         Ok(uuid)
     }
 
-    pub fn update_material<T: 'static>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> bool {
+    pub fn update_material<T>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> bool 
+        where T: 'static + Debug
+    {
         if let Some(material) = self.materials.get_mut(&material_handle) {
-            material.cpu_storage.set_uniform(name, value);
-            material.dirty = true;
-            true
-        } else {
-            false
+            if material.cpu_storage.set_uniform(name, value) {
+                material.dirty = true;
+                return true;
+            }   
         }
+        false
     }
 
     fn create_bind_groups(&self, material_handle: &Uuid) -> Result<Vec<wgpu::BindGroup>, SimpleError> {
@@ -239,11 +255,10 @@ impl Renderer {
             .1.bind_group_layouts;
         
         let mut texture_views = HashMap::new();
-        //generate the textures views that will be needed
         for (name, _, value) in uniforms.iter() {
             if let MaterialValue::Texture(texture) = value {
                 let uuid = &texture.uuid
-                    .ok_or(SimpleError::new(&format!("Could not find texture for material boud at: {}", name)))?;
+                    .ok_or(SimpleError::new(&format!("Could not find texture for material bound at: {}", name)))?;
                 let texture_view = self.textures.get(uuid)
                     .ok_or(SimpleError::new(format!("Could not find texture in resources for uniform at: {}", name)))?
                     .create_view(&wgpu::TextureViewDescriptor::default());
@@ -290,15 +305,61 @@ pub struct Graphics {
     config: SurfaceConfiguration,
     size: PhysicalSize<u32>,
     depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
+
+    current_surface_texture: Option<SurfaceTexture>,
+    command_buffers: Vec<CommandBuffer>, 
 }
 
 impl Graphics {
+    fn begin_render(&mut self, clear_color: [f32; 3]) -> Result<(), SurfaceError>{
+        let output = self.surface.get_current_texture()?;
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        {
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color[0] as f64,
+                            g: clear_color[1] as f64,
+                            b: clear_color[2] as f64,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.1,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
+        }
+
+        self.command_buffers.push(encoder.finish());
+        self.current_surface_texture.replace(output);
+
+        Ok(())
+    }
+
     fn render(&mut self, 
         work: Vec<RenderWork>,
     )  -> Result<(), wgpu::SurfaceError> {
         
-        let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = self.current_surface_texture.as_ref()
+            .expect("Render must be called after starting to render")
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -311,19 +372,14 @@ impl Graphics {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.1,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     }),
                     stencil_ops: None,
@@ -341,11 +397,20 @@ impl Graphics {
                 render_pass.draw_indexed(0..task.num_indices, 0, 0..1); // 2.     
             }
         }
-    
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+
+        self.command_buffers.push(encoder.finish());
 
         Ok(())
+    }
+
+    fn flush(&mut self) {
+        let command_buffers = self.command_buffers.drain(0..).collect::<Vec<_>>();
+        self.queue.submit(command_buffers);
+
+        let surface_texture = self.current_surface_texture.take()
+            .expect("Must call begin render before flush");
+
+        surface_texture.present();
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -451,8 +516,8 @@ fn create_bind_groups(&self,
             }
             
             if let Some(bytes) = value.as_bytes() {
-                byte_buffer.extend(bytes);
                 groups.push((binding, bytes.len()));
+                byte_buffer.extend(bytes);
             }
         }
         let buffer = self.create_uniform_buffer(&byte_buffer);
@@ -546,8 +611,10 @@ fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         })));
     }
 
+    group_and_bind_group_layouts.sort_by(|(group_1, _), (group_2, _)| group_1.cmp(&group_2));
+
     let bind_group_layouts = group_and_bind_group_layouts.iter().map(|(_, group)| group).collect::<Vec<_>>();
-    
+
     let render_pipeline_layout =
         self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
@@ -702,7 +769,9 @@ async fn new(window: &Window) -> Graphics {
         queue,
         config,
         size,
-        depth_texture
+        depth_texture,
+        current_surface_texture: None,
+        command_buffers: Vec::new()
     }
 }
 

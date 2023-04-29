@@ -1,6 +1,7 @@
 use core::slice;
 use std::{collections::HashMap, any::Any, num::NonZeroU64, mem, ptr};
 
+use cgmath::SquareMatrix;
 use naga::{ImageDimension, ImageClass, ScalarKind};
 use uuid::Uuid;
 
@@ -21,7 +22,7 @@ impl<T: Default + Copy> Vector<T> {
         }
     }
 
-    fn from(values: &[T]) -> Self {
+    fn _from(values: &[T]) -> Self {
         match values.len() {
             2 => Self::Vec2(values[0..2].try_into().unwrap()),
             3 => Self::Vec2(values[0..3].try_into().unwrap()),
@@ -32,35 +33,48 @@ impl<T: Default + Copy> Vector<T> {
 }
 
 impl<T: Sized> Vector<T> {
-    fn as_bytes(&self) -> &[u8] {
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut vec = Vec::new();
         match self {
             Vector::Vec2(v) => { 
                 let bp = v.as_ptr() as *const _;
-                unsafe { slice::from_raw_parts(bp, 2 * mem::size_of::<T>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, 2 * mem::size_of::<T>()) };
+                vec.extend_from_slice(slice);
             },
             Vector::Vec3(v) => {
                 let bp = v.as_ptr() as *const _;
-                unsafe { slice::from_raw_parts(bp, 3 * mem::size_of::<T>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, 3 * mem::size_of::<T>()) };
+                vec.extend_from_slice(slice);
+
             },
             Vector::Vec4(v) => {
                 let bp = v.as_ptr() as *const _;
-                unsafe { slice::from_raw_parts(bp, 4 * mem::size_of::<T>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, 4 * mem::size_of::<T>()) };
+                vec.extend_from_slice(slice);
+
             },
         }
+
+        vec
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Matrix {
-    Matrix4x4([[f32; 4]; 4])
+    Matrix4x4(cgmath::Matrix4<f32>)
 }
 
 impl Matrix {
-    fn as_bytes(&self) -> &[u8] {
+    fn as_bytes(&self) -> Vec<u8> {
         match self {
             Matrix::Matrix4x4(v) => {
-                let bp = v.as_ptr() as *const _;
-                unsafe { slice::from_raw_parts(bp, 16 * mem::size_of::<f32>()) }
+                let bytes: [[f32; 4]; 4] = v.clone().into();
+
+                let bp = bytes.as_ptr() as *const _;
+                let slice = unsafe { slice::from_raw_parts(bp, 16 * mem::size_of::<f32>()) };
+                let mut vec = Vec::new();
+                vec.extend_from_slice(slice);
+                vec
             },
         }
     }
@@ -69,13 +83,13 @@ impl Matrix {
 impl Matrix {
     fn new(columns: u32, rows: u32) -> Option<Self> {
         if columns == 4 && rows == 4 {
-            Some(Self::Matrix4x4([[0f32; 4]; 4]))
+            Some(Self::Matrix4x4(cgmath::Matrix4::identity()))
         } else {
             None
         }
     }
 
-    fn from(matrix: [[f32; 4]; 4]) -> Self {
+    pub fn from(matrix: cgmath::Matrix4<f32>) -> Self {
         Self::Matrix4x4(matrix)
     }
 }
@@ -105,17 +119,6 @@ pub fn create_binding_type(naga_type: &naga::TypeInner) -> Option<wgpu::BindingT
                 create_binding_type_for_image(*dim, *arrayed, *class)?,
             naga::TypeInner::Sampler { comparison } => 
                 create_binding_type_for_sampler(*comparison),
-            
-            /*naga::TypeInner::Array { base, size, stride } => wgpu::BindingType::Buffer { 
-                ty: wgpu::BufferBindingType::Uniform, 
-                has_dynamic_offset: false, 
-                min_binding_size: NonZeroU64::new(size as u64 * (stride as u64))
-            },*/
-    
-            // naga::TypeInner::BindingArray { base, size } => todo!(),
-            // naga::TypeInner::Atomic { kind, width } => todo!(),
-            // naga::TypeInner::Pointer { base, space } => todo!(),
-            // naga::TypeInner::ValuePointer { size, kind, width, space } => todo!(),
             _ => return None
         };
 
@@ -172,30 +175,38 @@ pub enum MaterialValue {
 }
 
 impl MaterialValue {
-    pub fn as_bytes(&self) -> Option<&[u8]> {
-        Some(match self {
+    pub fn as_bytes(&self) -> Option<Vec<u8>> {
+        let mut vec = Vec::new();
+        match self {
             MaterialValue::Float(v) => {
                 let bp = ptr::addr_of!(v) as *const u8;
-                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) };
+                vec.extend_from_slice(slice);
             },
             MaterialValue::Int(v) => {
                 let bp = ptr::addr_of!(v) as *const u8;
-                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) };
+                vec.extend_from_slice(slice);
+
             },
             MaterialValue::Uint(v) => {
                 let bp = ptr::addr_of!(v) as *const u8;
-                unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) }
+                let slice = unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) };
+                vec.extend_from_slice(slice);
+
             },
-            MaterialValue::Bool(v) => if *v { &[1u8] } else { &[0u8] },
-            MaterialValue::FloatVector(v) => v.as_bytes(),
-            MaterialValue::IntVector(v) => v.as_bytes(),
-            MaterialValue::UintVector(v) => v.as_bytes(),
-            MaterialValue::BoolVector(v) => v.as_bytes(),
-            MaterialValue::Matrix(v) => v.as_bytes(),
+            MaterialValue::Bool(v) => if *v { vec.push(1u8) } else { vec.push(0u8) },
+            MaterialValue::FloatVector(v) => return Some(v.as_bytes()),
+            MaterialValue::IntVector(v) => return Some(v.as_bytes()),
+            MaterialValue::UintVector(v) => return Some(v.as_bytes()),
+            MaterialValue::BoolVector(v) => return Some(v.as_bytes()),
+            MaterialValue::Matrix(v) => return Some(v.as_bytes()),
             MaterialValue::Struct(_) => return None,
             MaterialValue::Texture(_) => return None,
             MaterialValue::Sampler(_) => return None,
-        })
+        };
+
+        Some(vec)
     }
 
     pub fn get_mut<T: 'static>(&mut self) -> Option<&mut T> {
