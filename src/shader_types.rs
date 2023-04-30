@@ -68,7 +68,7 @@ impl Matrix {
     fn as_bytes(&self) -> Vec<u8> {
         match self {
             Matrix::Matrix4x4(v) => {
-                let bytes: [[f32; 4]; 4] = v.clone().into();
+                let bytes: [[f32; 4]; 4] = (*v).into();
 
                 let bp = bytes.as_ptr() as *const _;
                 let slice = unsafe { slice::from_raw_parts(bp, 16 * mem::size_of::<f32>()) };

@@ -84,7 +84,7 @@ impl Pipeline {
                 .or_insert(vec![uniform]);
         }
 
-        groups.into_iter().map(|(_, uniforms)| uniforms).collect::<Vec<_>>()
+        groups.into_values().collect::<Vec<_>>()
     }
 
     pub fn new_material(&self) -> Material {
@@ -111,15 +111,17 @@ impl Pipeline {
         
         let naga_types = &shader_module.types;
 
-        let visibilities = Self::get_variable_visibilities(&shader_module);
+        let visibilities = Self::get_variable_visibilities(shader_module);
         
         let variables = &shader_module.global_variables;
         for (handle, variable) in variables.iter() {
             let name = variable.name.as_ref()
                 .ok_or("Global variable in shader does not have a name!")?;
 
-            let binding = variable.binding.as_ref()
-                .ok_or("Global variable in shader does not have a binding!")?;
+            let binding = variable.binding.as_ref();
+                // .ok_or("Global variable in shader does not have a binding!")?;
+            if binding.is_none() { continue }
+            let binding = binding.unwrap();
 
             let visibility = *visibilities
                 .get(&handle)
@@ -158,8 +160,8 @@ impl Pipeline {
 
             for (_, expr) in entry_point.function.expressions.iter() {
                 if let Expression::GlobalVariable(handle) = expr {
-                    visibilities.entry(handle.clone())
-                        .and_modify(|s| *s = *s | stage)
+                    visibilities.entry(*handle)
+                        .and_modify(|s| *s |= stage)
                         .or_insert(stage);
                 }
             }
@@ -171,7 +173,7 @@ impl Pipeline {
     fn correct_filterable_samplers(uniforms: &mut HashMap<String, Uniform>) {
         let mut sorted_by_group: HashMap<u32, Vec<&mut wgpu::BindingType>> = HashMap::new();
 
-        for (_, uniform) in uniforms {
+        for uniform in uniforms.values_mut() {
             let unif = sorted_by_group.entry(uniform.binding.group)
                 .or_insert(vec![]);
 
@@ -179,10 +181,10 @@ impl Pipeline {
         }
 
         for group in sorted_by_group.values_mut() {
-            if group.iter().find(|e| matches!(e, wgpu::BindingType::Texture { 
+            if group.iter().any(|e| matches!(e, wgpu::BindingType::Texture { 
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     ..
-                })).is_some()
+                }))
             {
                 if let Some(sampler) = group.iter_mut().find(|e| matches!(e, wgpu::BindingType::Sampler(..))) {
                     **sampler = wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)

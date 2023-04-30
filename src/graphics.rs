@@ -64,9 +64,13 @@ impl RectangleBuilder {
         
         Rectangle {
             vertices: [
+                //bottom left
                 Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[0] }, 
+                //top left
                 Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[1] }, 
+                //bottom right
                 Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[2] }, 
+                //top right
                 Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[3] }, 
             ]
         }
@@ -79,5 +83,6 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+    //bl, br, tl, tl, br, tr
     pub const INDICES: [u32; 6] = [0, 2, 1, 1, 2, 3];
 }

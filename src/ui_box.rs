@@ -9,7 +9,7 @@ pub struct UiBoxFactory {
 
 impl UiBoxFactory {
     pub fn new(renderer: &mut Renderer) -> Result<Self, SimpleError> {
-        let pipeline = Pipeline::load::<Vertex>(include_str!("untextured.wgsl"))?;
+        let pipeline = Pipeline::load::<Vertex>(include_str!("rect.wgsl"))?;
         // renderer
         let pipeline_handle = renderer.create_pipeline(pipeline);
         let material_handle = renderer.create_material(pipeline_handle)?;

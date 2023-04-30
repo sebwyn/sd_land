@@ -67,7 +67,7 @@ impl Font {
             .map(|(_, m, _)| m.bounds.ymin)
             .unwrap();
 
-        let font_image = image::GrayImage::from_fn((max_width * width) as u32, max_height, 
+        let font_image = image::GrayImage::from_fn(max_width * width, max_height, 
             |x, y| {
                 let in_character_x: u32 = x % max_width;
                 let character = (x - in_character_x) / max_width;
@@ -186,8 +186,8 @@ impl TextBoxFactory {
         })
     }
 
-    pub fn create(&self, text: &str, position: (f32, f32), depth: f32) -> Vec<(Rectangle, MaterialHandle, RenderStage)> {    
-        self.font.layout_text(text, position, 0.001, depth).unwrap()
+    pub fn create(&self, text: &str, position: (f32, f32), depth: f32, scale: f32) -> Vec<(Rectangle, MaterialHandle, RenderStage)> {    
+        self.font.layout_text(text, position, scale, depth).unwrap()
             .into_iter()
             .map(|rect| (rect, self.material_handle, RenderStage { order: 1 }))
             .collect::<Vec<_>>()

@@ -55,8 +55,8 @@ impl Renderer {
     }
 
     #[inline]
-    fn primitive_by_stage_by_material<'a, 'b>(query_vec: &[(&'b MaterialHandle, &'a Rectangle, &RenderStage)]) 
-        -> Option<Vec<HashMap<&'b MaterialHandle, Vec<&'a Rectangle>>>>
+    fn primitive_by_stage_by_material<'a>(query_vec: &[(&MaterialHandle, &'a Rectangle, &RenderStage)]) 
+        -> Option<Vec<HashMap<MaterialHandle, Vec<&'a Rectangle>>>>
     {
         let mut rects_by_stage_by_material = Vec::new();
         rects_by_stage_by_material.push(HashMap::new());
@@ -75,7 +75,7 @@ impl Renderer {
             rects_by_stage_by_material
                 .last_mut()
                 .unwrap()
-                .entry(material.clone())
+                .entry(**material)
                 .and_modify(|v: &mut Vec<&Rectangle>| v.push(rect))
                 .or_insert(vec![rect]);
         }
@@ -97,8 +97,7 @@ impl Renderer {
         let mut camera_query = <&Camera>::query();
         
         let view_proj_matrix = camera_query.iter(world).next()
-            .and_then(|cam| Some(cam.matrix())).unwrap_or(Matrix4::<f32>::identity());
-
+            .map(|cam| cam.matrix()).unwrap_or(Matrix4::<f32>::identity());
 
         for material in all_materials.iter() {
             //try and update the view_proj matrix, may fail, but that is fine
@@ -124,7 +123,7 @@ impl Renderer {
         for rects_by_material in rects_by_stage_by_material.iter() {
             let mut render_tasks = Vec::new();
             for (material, rectangles) in rects_by_material.iter() {
-            
+
                 let material_info = match self.materials.get(material) {
                     Some(material) => material,
                     None => continue,
@@ -132,17 +131,14 @@ impl Renderer {
 
                 let vertices = rectangles
                     .iter()
-                    .map(|rect| rect.vertices)
-                    .flatten()
+                    .flat_map(|rect| rect.vertices)
                     .collect::<Vec<_>>();
 
                 let num_rectangles = vertices.len() / 4;
                 let indices = (0..num_rectangles)
-                    .into_iter()
-                    .map(|i| 
+                    .flat_map(|i| 
                         Rectangle::INDICES.iter()
                         .map(move |e| *e + (i * 4) as u32))
-                    .flatten()
                     .collect::<Vec<_>>();
 
                 let vertex_buffer = self.graphics.create_vertex_buffer(&vertices);
@@ -224,7 +220,7 @@ impl Renderer {
         let cpu_storage = pipeline.new_material();
         let material_info = MaterialInfo {
             pipeline: pipeline_handle,
-            cpu_storage: cpu_storage,
+            cpu_storage,
             bind_groups: None,
             dirty: true,
         };
@@ -263,7 +259,7 @@ impl Renderer {
                     .ok_or(SimpleError::new(format!("Could not find texture in resources for uniform at: {}", name)))?
                     .create_view(&wgpu::TextureViewDescriptor::default());
             
-                texture_views.insert(uuid.clone(), texture_view);
+                texture_views.insert(*uuid, texture_view);
             }
         }
 
@@ -389,7 +385,7 @@ impl Graphics {
             for task in work.iter() {
                 render_pass.set_pipeline(task.pipeline);
 
-                for (i, bind_group) in task.bind_groups.into_iter().enumerate() {
+                for (i, bind_group) in task.bind_groups.iter().enumerate() {
                     render_pass.set_bind_group(i as u32, bind_group, &[]);
                 }
                 render_pass.set_vertex_buffer(0, task.vertex_buffer.slice(..));
@@ -555,7 +551,7 @@ fn create_bind_groups(&self,
                         
                         wgpu::BindGroupEntry {
                             binding: *binding,
-                            resource: wgpu::BindingResource::TextureView(&texture_view),
+                            resource: wgpu::BindingResource::TextureView(texture_view),
                         }
                     },
                     crate::shader_types::MaterialValue::Sampler(sampler) => {
@@ -611,7 +607,7 @@ fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         })));
     }
 
-    group_and_bind_group_layouts.sort_by(|(group_1, _), (group_2, _)| group_1.cmp(&group_2));
+    group_and_bind_group_layouts.sort_by(|(group_1, _), (group_2, _)| group_1.cmp(group_2));
 
     let bind_group_layouts = group_and_bind_group_layouts.iter().map(|(_, group)| group).collect::<Vec<_>>();
 
@@ -743,9 +739,8 @@ async fn new(window: &Window) -> Graphics {
     let surface_caps = surface.get_capabilities(&adapter);
 
     let surface_format = surface_caps.formats.iter()
-        .copied()
-        .filter(|f| f.describe().srgb)
-        .next()
+        .find(|f| f.describe().srgb)
+        .cloned()
         .unwrap_or(surface_caps.formats[0]);
 
     let config = wgpu::SurfaceConfiguration {

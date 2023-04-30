@@ -1,39 +1,38 @@
+use std::env::{Args, self};
+
 use legion::World;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::WindowBuilder, dpi::PhysicalSize,
 };
 
 use crate::{
     renderer::Renderer, 
-    text::TextBoxFactory, ui_box::UiBoxFactory
+    text::TextBoxFactory, camera::Camera
 };
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World) {
     let text_factory = TextBoxFactory::new(renderer).unwrap();
-    let text_components = text_factory.create("fn main() -> String {}", (0f32, 0f32), 0.1);
+    let text_components = text_factory
+        .create("ChatGPT Conversation (dogs)", (800f32, 600f32), 0.9, 1f32);
     world.extend(text_components);
 
-    let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
-
-    let ui_box = 
-        ui_box_factory.create("#122630",(-0.6f32, -0.95f32), (1.2, 0.4), 0.9).unwrap();
-    let ui_box_1 = 
-        ui_box_factory.create("#122630",(-0.6f32, -0.5f32), (1.2, 0.4), 0.9).unwrap();
-    let ui_box_2 = 
-        ui_box_factory.create("#122630",(-0.6f32, -0.05f32), (1.2, 0.4), 0.9).unwrap();
-    
-    world.extend([ui_box, ui_box_1, ui_box_2]);
+    let file = env::args().skip(1).next().expect("Expected a file to be passed!");
+    println!("file {}", file);
 
     //create the camera
-    // let camera = Camera::new();
+    let camera = Camera::new(1600, 1200);
+
+    world.push((camera,));
 }
 
 pub fn run() {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_inner_size(PhysicalSize::<u32> { width: 1600, height: 1200 })
+        .build(&event_loop).unwrap();
 
     let mut renderer = Renderer::new(&window);
     let mut world = World::default();
