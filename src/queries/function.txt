@@ -1,0 +1,25 @@
+(call_expression
+  function: (identifier) @function)
+(call_expression
+  function: (field_expression
+    field: (field_identifier) @function.method))
+(call_expression
+  function: (scoped_identifier
+    "::"
+    name: (identifier) @function))
+
+(generic_function
+  function: (identifier) @function)
+(generic_function
+  function: (scoped_identifier
+    name: (identifier) @function))
+(generic_function
+  function: (field_expression
+    field: (field_identifier) @function.method))
+
+(macro_invocation
+  macro: (identifier) @function.macro
+  "!" @function.macro)
+
+(function_item (identifier) @function)
+(function_signature_item (identifier) @function)

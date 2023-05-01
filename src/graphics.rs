@@ -9,6 +9,8 @@ pub struct Vertex {
 impl Vertex {
     const ATTRIBS: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+
+    pub fn position(&self) -> &[f32; 3] { &self.position }
 }
 
 impl crate::pipeline::Vertex for Vertex {

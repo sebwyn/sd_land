@@ -1,5 +1,8 @@
 use cgmath::{Point3, Vector3};
-use winit::dpi::PhysicalSize;
+use legion::{World, IntoQuery};
+use winit::dpi::PhysicalPosition;
+
+use crate::{system::Event, graphics::Vertex};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -56,11 +59,40 @@ impl Camera {
             OPENGL_TO_WGPU_MATRIX * proj * view
     }
 
-    //this should be moved to some kind of camera controller
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        self.width = new_size.width as f32;
-        self.height = new_size.height as f32;
-        self.eye = Point3::<f32> { x: self.width / 2.0, y: self.height / 2.0, z: 100.0 };
-        self.target = Point3::<f32> { x: self.width / 2.0, y: self.height / 2.0, z: 0.0 };
+    pub fn is_visible(&self, vertices: &[Vertex]) -> bool {
+        let top = (self.eye.y + self.height) + 30f32;
+        let bottom = self.eye.y - 30f32;
+        
+        //just do a super simple check
+        if bottom < vertices[0].position()[1] && vertices[0].position()[1] < top {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub fn camera_on_event(world: &mut World, event: &Event) {
+    match event {
+        Event::Resize(new_size) => {
+            let mut camera_query = <&mut Camera>::query();
+    
+            for camera in camera_query.iter_mut(world) {
+                camera.width = new_size.width as f32;
+                camera.height = new_size.height as f32;
+            }
+        }
+        Event::MouseScroll(PhysicalPosition::<f64> { y, .. }) => {
+            let mut camera_query = <&mut Camera>::query();
+    
+            for camera in camera_query.iter_mut(world) {
+                camera.eye.y += *y as f32;
+                camera.target.y = camera.eye.y;
+
+                // camera.eye.x -= *x as f32;
+                // camera.target.x = camera.eye.x;
+
+            }
+        }
     }
 }

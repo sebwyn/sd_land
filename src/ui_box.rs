@@ -9,7 +9,7 @@ pub struct UiBoxFactory {
 
 impl UiBoxFactory {
     pub fn new(renderer: &mut Renderer) -> Result<Self, SimpleError> {
-        let pipeline = Pipeline::load::<Vertex>(include_str!("rect.wgsl"))?;
+        let pipeline = Pipeline::load::<Vertex>(include_str!("shaders/rect.wgsl"))?;
         // renderer
         let pipeline_handle = renderer.create_pipeline(pipeline);
         let material_handle = renderer.create_material(pipeline_handle)?;
@@ -59,6 +59,5 @@ pub fn hex_color(color: &str) -> Result<[f32; 3], SimpleError> {
     let g = u32::from_str_radix(g, 16).map_err(|_| SimpleError::new("hex_color: Failed to convert string to number"))? as f32;
     let b = u32::from_str_radix(b, 16).map_err(|_| SimpleError::new("hex_color: Failed to convert string to number"))? as f32;
 
-    println!("{}, {}, {}", r, g, b);
     Ok([ r / 255f32, g / 255f32, b / 255f32 ])
 }

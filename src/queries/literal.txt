@@ -1,0 +1,3 @@
+(boolean_literal) @constant.builtin
+(integer_literal) @constant.builtin
+(float_literal) @constant.builtin

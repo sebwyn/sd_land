@@ -10,11 +10,20 @@ use font_loader::system_fonts;
 
 type TexCoords = [[f32; 2]; 4];
 
+#[derive(Debug)]
+pub struct Bounds {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
 pub struct Font {
     characters: HashMap<char, (TexCoords, Metrics)>,
     texture: Texture,
     font: fontdue::Font,
     smallest_ymin: f32,
+
 }
 
 impl Font {
@@ -125,9 +134,13 @@ impl Font {
         [[left, bottom], [left, top], [right, bottom], [right, top]]
     }
 
-    fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<Vec<Rectangle>, SimpleError> {
+    fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(Vec<RectangleBuilder>, Bounds), SimpleError> {
         origin.1 += -self.smallest_ymin * scale;
         
+        let left = origin.0;
+        let mut max_y = None;
+        let mut min_y = None;
+
         let mut rectangles = Vec::new();
         let characters = text.chars().collect::<Vec<_>>();
         for (i, c) in characters.iter().enumerate() {
@@ -140,12 +153,23 @@ impl Font {
             let left = origin.0 + (metrics.bounds.xmin * scale);
             let width = metrics.bounds.width * scale;
 
+            let min_y = min_y.get_or_insert(bottom);
+            if bottom < *min_y {
+                *min_y = bottom;
+            }
+
+            let top = bottom + height;
+            let max_y = max_y.get_or_insert(top);
+            if top > *max_y {
+                *max_y = top;
+            }
+
             rectangles.push(RectangleBuilder::default()
                 .position(left, bottom)
                 .size(width, height)
                 .tex_coords(*tex_coords)
                 .depth(depth)
-                .build());
+            );
 
             if let Some(next_character) = characters.get(i + 1) {
                 if let Some(kerning) = self.font.horizontal_kern(*c, *next_character, 1f32) {
@@ -156,7 +180,9 @@ impl Font {
             origin.0 += metrics.advance_width * scale;
         }
 
-        Ok(rectangles)
+        let right = origin.0;
+
+        Ok((rectangles, Bounds { left, right, top: max_y.unwrap(), bottom: min_y.unwrap()}))
     }
 
 }
@@ -167,11 +193,11 @@ pub struct TextBoxFactory {
 }
 
 impl TextBoxFactory {
-    pub fn new(renderer: &mut Renderer) -> Result<Self, SimpleError> {
-        let font = Font::load(renderer,"Arial")?;
+    pub fn new(renderer: &mut Renderer, font: &str) -> Result<Self, SimpleError> {
+        let font = Font::load(renderer, font)?;
 
 
-        let text_pipeline = Pipeline::load::<Vertex>(include_str!("text_shader.wgsl"))?;
+        let text_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/text_shader.wgsl"))?;
         let pipeline_handle = renderer.create_pipeline(text_pipeline);
 
         let material_handle = renderer.create_material(pipeline_handle)?;
@@ -186,11 +212,16 @@ impl TextBoxFactory {
         })
     }
 
-    pub fn create(&self, text: &str, position: (f32, f32), depth: f32, scale: f32) -> Vec<(Rectangle, MaterialHandle, RenderStage)> {    
-        self.font.layout_text(text, position, scale, depth).unwrap()
-            .into_iter()
-            .map(|rect| (rect, self.material_handle, RenderStage { order: 1 }))
-            .collect::<Vec<_>>()
+    pub fn create(&self, text: &str, position: (f32, f32), depth: f32, scale: f32, color: [f32; 3]) -> (Bounds, Vec<(Rectangle, MaterialHandle, RenderStage)>) {    
+        self.font.layout_text(text, position, scale, depth)
+        .map(|(rects, bounds)| {
+            let elements = rects
+                .into_iter()
+                .map(|rect| (rect.color(color).build(), self.material_handle, RenderStage { order: 1 }))
+                .collect::<Vec<_>>();
+            
+            (bounds, elements)
+        }).unwrap()
     }
 }
 

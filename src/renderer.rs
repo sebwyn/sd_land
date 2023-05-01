@@ -84,7 +84,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
-        let start = Instant::now();
+        let _ = Instant::now();
         
         let mut query = <(&MaterialHandle, &Rectangle, &RenderStage)>::query();
 
@@ -96,8 +96,9 @@ impl Renderer {
         //grab the camera from the scene
         let mut camera_query = <&Camera>::query();
         
-        let view_proj_matrix = camera_query.iter(world).next()
-            .map(|cam| cam.matrix()).unwrap_or(Matrix4::<f32>::identity());
+        let camera = camera_query.iter(world).next();
+
+        let view_proj_matrix = camera.map(|cam| cam.matrix()).unwrap_or(Matrix4::<f32>::identity());
 
         for material in all_materials.iter() {
             //try and update the view_proj matrix, may fail, but that is fine
@@ -128,11 +129,20 @@ impl Renderer {
                     Some(material) => material,
                     None => continue,
                 };
-
-                let vertices = rectangles
-                    .iter()
-                    .flat_map(|rect| rect.vertices)
-                    .collect::<Vec<_>>();
+                 
+                let vertices: Vec<Vertex> = 
+                if let Some(camera) = camera {
+                    rectangles
+                        .iter()
+                        .filter(|rect| camera.is_visible(&rect.vertices))
+                        .flat_map(|rect| rect.vertices)
+                        .collect()
+                } else {
+                    rectangles
+                        .iter()
+                        .flat_map(|rect| rect.vertices)
+                        .collect::<Vec<_>>()
+                };
 
                 let num_rectangles = vertices.len() / 4;
                 let indices = (0..num_rectangles)
@@ -161,10 +171,10 @@ impl Renderer {
 
         self.graphics.flush();
 
-        let elapsed = start.elapsed();
-        if elapsed.as_millis() > 16 {
-            println!("Rendering took: {}", elapsed.as_millis());
-        }
+        // let elapsed = start.elapsed();
+        // if elapsed.as_millis() > 16 {
+        //     println!("Rendering took: {}", elapsed.as_millis());
+        // }
 
         Ok(())
 
