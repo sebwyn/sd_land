@@ -55,5 +55,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         smoothstep(1.0, 0.95, distance.a))
     );
     
-    return in.color;
+    return vec4<f32>(in.color.xyz * color, 1.0);
 }

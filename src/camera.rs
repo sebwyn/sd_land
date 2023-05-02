@@ -1,8 +1,8 @@
 use cgmath::{Point3, Vector3};
-use legion::{World, IntoQuery};
+use legion::{World, IntoQuery, component};
 use winit::dpi::PhysicalPosition;
 
-use crate::{system::Event, graphics::Vertex};
+use crate::{system::Event, graphics::Vertex, file_searcher::FileSearcher};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -77,13 +77,14 @@ pub fn camera_on_event(world: &mut World, event: &Event) {
         Event::Resize(new_size) => {
             let mut camera_query = <&mut Camera>::query();
     
-            for camera in camera_query.iter_mut(world) {
-                camera.width = new_size.width as f32;
-                camera.height = new_size.height as f32;
-            }
+            // for camera in camera_query.iter_mut(world) {
+            //     camera.width = new_size.width as f32;
+            //     camera.height = new_size.height as f32;
+            // }
         }
         Event::MouseScroll(PhysicalPosition::<f64> { y, .. }) => {
-            let mut camera_query = <&mut Camera>::query();
+            let mut camera_query = <&mut Camera>::query()
+                .filter(!component::<FileSearcher>());
     
             for camera in camera_query.iter_mut(world) {
                 camera.eye.y += *y as f32;
@@ -93,6 +94,7 @@ pub fn camera_on_event(world: &mut World, event: &Event) {
                 // camera.target.x = camera.eye.x;
 
             }
-        }
+        },
+        _ => {}
     }
 }

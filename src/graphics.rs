@@ -1,3 +1,6 @@
+pub struct Visible;
+
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {

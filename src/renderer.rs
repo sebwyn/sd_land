@@ -1,15 +1,14 @@
 use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant};
 use core::fmt::Debug;
 
-use cgmath::{Matrix4, SquareMatrix};
 use image::ImageBuffer;
-use legion::{World, IntoQuery};
+use legion::{World, Entity, EntityStore, IntoQuery};
 use simple_error::SimpleError;
 use uuid::Uuid;
 use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, Buffer, util::DeviceExt, RenderPipeline, BindGroup, BindGroupLayout, CommandBuffer, SurfaceTexture, SurfaceError};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{graphics::{Rectangle, Vertex}, pipeline::Pipeline, material::Material, shader_types::{MaterialValue, Matrix}, camera::Camera};
+use crate::{graphics::{Rectangle, Vertex, Visible}, pipeline::Pipeline, material::Material, shader_types::{MaterialValue, Matrix}, camera::Camera, view::{View, ViewRef}};
 
 pub struct Renderer {
     textures: HashMap<Uuid, wgpu::Texture>,
@@ -40,109 +39,69 @@ impl Renderer {
         }
     }
 
-    #[inline]
-    fn all_materials<'a>(query_vec: &[(&'a MaterialHandle, &Rectangle, &RenderStage)]) -> Vec<&'a MaterialHandle> {
-        let mut all_materials = Vec::new();
-        
-        for (material, _, _) in query_vec {
-            all_materials.push(*material);
-        }
-
-        all_materials.sort();
-        all_materials.dedup();
-
-        all_materials
-    }
-
-    #[inline]
-    fn primitive_by_stage_by_material<'a>(query_vec: &[(&MaterialHandle, &'a Rectangle, &RenderStage)]) 
-        -> Option<Vec<HashMap<MaterialHandle, Vec<&'a Rectangle>>>>
-    {
-        let mut rects_by_stage_by_material = Vec::new();
-        rects_by_stage_by_material.push(HashMap::new());
-
-        let mut current_stage = 
-        if let Some(first) = query_vec.first()
-            { first.2.order } else { return None };
-
-        //order by stage and then by material
-        for (material, rect, stage) in query_vec {
-            if stage.order != current_stage {
-                current_stage = stage.order;
-                rects_by_stage_by_material.push(HashMap::new());
-            }
-            
-            rects_by_stage_by_material
-                .last_mut()
-                .unwrap()
-                .entry(**material)
-                .and_modify(|v: &mut Vec<&Rectangle>| v.push(rect))
-                .or_insert(vec![rect]);
-        }
-
-        Some(rects_by_stage_by_material)
-    }
-
     pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
         let _ = Instant::now();
         
-        let mut query = <(&MaterialHandle, &Rectangle, &RenderStage)>::query();
+        let mut viewed_elements = <(&Rectangle, &MaterialHandle, &RenderStage, &ViewRef)>::query();
 
-        let mut query_vec = query.iter(world).collect::<Vec<_>>();
-        query_vec.sort_by(|(_, _, stage_1), (_, _, stage_2)| stage_1.order.cmp(&stage_2.order));
-        
-        let all_materials = Self::all_materials(&query_vec);
-        
-        //grab the camera from the scene
-        let mut camera_query = <&Camera>::query();
-        
-        let camera = camera_query.iter(world).next();
-
-        let view_proj_matrix = camera.map(|cam| cam.matrix()).unwrap_or(Matrix4::<f32>::identity());
-
-        for material in all_materials.iter() {
-            //try and update the view_proj matrix, may fail, but that is fine
-            let matrix = Matrix::from(view_proj_matrix);
-            self.update_material(**material, "view_proj", matrix);
+        //sort the elements by which view their in
+        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&Rectangle>>> = HashMap::new();
+        for (rectangle, material, _, view, ..) in viewed_elements.iter(world) {
+            let view = elements_by_view.entry(view.0)
+                .or_insert(HashMap::new());
             
-            let material_info = self.materials.get_mut(material).unwrap();
-            
-            if material_info.dirty || material_info.bind_groups.is_none() {
-                let updated_bind_groups = self.create_bind_groups(material).unwrap();
+            let material_vec = view.entry(*material)
+                .or_insert(Vec::new());
 
-                let material_info = self.materials.get_mut(material).unwrap();
-                material_info.bind_groups = Some(updated_bind_groups);
-                material_info.dirty = false;
-            }
+            material_vec.push(rectangle);
         }
 
-        let rects_by_stage_by_material = Self::primitive_by_stage_by_material(&query_vec);
-        if rects_by_stage_by_material.is_none() { return Ok(()) }
-        let rects_by_stage_by_material = rects_by_stage_by_material.unwrap();
-
         self.graphics.begin_render([0f32, 0f32, 0f32])?;
-        for rects_by_material in rects_by_stage_by_material.iter() {
+        for (view, rects_by_material) in elements_by_view {
+            //set the view
+            let view_entity = world.entry_ref(view).expect("View entity does not exist!");
+            let view = view_entity.get_component::<View>().expect("View entity doesn't have a view!");
+            let camera = view_entity.get_component::<Camera>().expect("View entity doesn't have a camera!");
+            
+            let is_visible = view_entity.get_component::<Visible>().ok().is_some();
+            if !is_visible {
+                continue;
+            }
+
+            let view_proj_matrix = Matrix::from(camera.matrix());
+
+            //udpate all the materials to have a camera
+            for (material, _) in rects_by_material.iter() {
+                //try and update the view_proj matrix, may fail, but that is fine
+
+                self.update_material(*material, "view_proj", view_proj_matrix.clone());
+                
+                let material_info = self.materials.get_mut(material).unwrap();
+                
+                if material_info.dirty || material_info.bind_groups.is_none() {
+                    let updated_bind_groups = self.create_bind_groups(material).unwrap();
+    
+                    let material_info = self.materials.get_mut(material).unwrap();
+                    material_info.bind_groups = Some(updated_bind_groups);
+                    material_info.dirty = false;
+                }
+            }
+
             let mut render_tasks = Vec::new();
             for (material, rectangles) in rects_by_material.iter() {
+                
+                // println!("{}\n{:#?}", material, rectangles);
 
                 let material_info = match self.materials.get(material) {
                     Some(material) => material,
                     None => continue,
                 };
-                 
-                let vertices: Vec<Vertex> = 
-                if let Some(camera) = camera {
-                    rectangles
-                        .iter()
-                        .filter(|rect| camera.is_visible(&rect.vertices))
-                        .flat_map(|rect| rect.vertices)
-                        .collect()
-                } else {
-                    rectangles
-                        .iter()
-                        .flat_map(|rect| rect.vertices)
-                        .collect::<Vec<_>>()
-                };
+
+                let vertices: Vec<Vertex> = rectangles
+                    .iter()
+                    .filter(|rect| camera.is_visible(&rect.vertices))
+                    .flat_map(|rect| rect.vertices)
+                    .collect();
 
                 let num_rectangles = vertices.len() / 4;
                 let indices = (0..num_rectangles)
@@ -162,19 +121,14 @@ impl Renderer {
                     bind_groups: material_info.bind_groups.as_ref().unwrap(), 
                     vertex_buffer, 
                     index_buffer, 
-                    num_indices
+                    num_indices,
+                    view: Some(view),
                 });
             }
 
             self.graphics.render(render_tasks)?;
         }
-
         self.graphics.flush();
-
-        // let elapsed = start.elapsed();
-        // if elapsed.as_millis() > 16 {
-        //     println!("Rendering took: {}", elapsed.as_millis());
-        // }
 
         Ok(())
 
@@ -299,7 +253,8 @@ pub struct RenderWork<'a> {
     bind_groups: &'a [BindGroup], 
     vertex_buffer: Buffer, 
     index_buffer: Buffer, 
-    num_indices: u32
+    num_indices: u32,
+    view: Option<&'a View>,
 }
 
 pub struct Graphics {
@@ -393,6 +348,23 @@ impl Graphics {
             });
 
             for task in work.iter() {
+                if let Some(view) = &task.view {
+                    // println!("{}, {}", view.x_pos(self.config.width), view.y_pos(self.config.height));
+                    // println!("{}, {}", view.width(self.config.width), view.height(self.config.height));
+                    
+                    render_pass.set_viewport(
+                        view.x_pos(), 
+                        view.y_pos(), 
+                        view.width(), 
+                        view.height(),
+                        view.near(),
+                        view.far() 
+                    )
+                } else {
+                    //set the viewport to be the full screen
+                    render_pass.set_viewport(-1.0, -1.0, 2.0, 2.0, 0.0, 1.0);
+                }
+                
                 render_pass.set_pipeline(task.pipeline);
 
                 for (i, bind_group) in task.bind_groups.iter().enumerate() {
@@ -717,7 +689,7 @@ async fn new(window: &Window) -> Graphics {
     let size = window.inner_size();
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::all(),
+        backends: wgpu::Backends::METAL,
         dx12_shader_compiler: Default::default(),
     });
     

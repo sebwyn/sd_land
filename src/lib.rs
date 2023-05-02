@@ -11,3 +11,6 @@ pub mod ui_box;
 pub mod camera;
 pub mod system;
 pub mod buffer;
+pub mod view;
+pub mod shortcuts;
+pub mod file_searcher;
