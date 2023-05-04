@@ -1,5 +1,10 @@
+use std::{rc::Rc, cell::RefCell};
+
 pub struct Visible;
 
+pub struct VertexProvider {
+    vertices: Rc<RefCell<Vec<Vertex>>>
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]

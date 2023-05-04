@@ -4,7 +4,7 @@ use fontdue::Metrics;
 use image::Luma;
 use simple_error::SimpleError;
 
-use crate::{renderer::{MaterialHandle, Renderer, RenderStage}, pipeline::Pipeline, graphics::{Vertex, Rectangle, RectangleBuilder}, shader_types::{Texture, Sampler}};
+use crate::{renderer::{MaterialHandle, Renderer}, pipeline::Pipeline, graphics::{Vertex, RectangleBuilder}, shader_types::{Texture, Sampler}};
 
 use font_loader::system_fonts;
 
@@ -18,11 +18,13 @@ pub struct Bounds {
     pub bottom: f32,
 }
 
+#[derive(Clone)]
 pub struct Font {
     characters: HashMap<char, (TexCoords, Metrics)>,
     texture: Texture,
     font: fontdue::Font,
     smallest_ymin: f32,
+    greatest_y: f32,
 
 }
 
@@ -76,6 +78,17 @@ impl Font {
             .map(|(_, m, _)| m.bounds.ymin)
             .unwrap();
 
+            let greatest_y = char_data.iter()
+            .min_by(|(_, a, _), (_, b, _)| {
+                let a_y_max = a.bounds.ymin + a.bounds.height;
+                let b_y_max = b.bounds.ymin + b.bounds.height;
+
+                a_y_max.partial_cmp(&b_y_max)
+                    .unwrap_or(Ordering::Equal) 
+            })
+            .map(|(_, m, _)| m.bounds.ymin)
+            .unwrap();
+
         let font_image = image::GrayImage::from_fn(max_width * width, max_height, 
             |x, y| {
                 let in_character_x: u32 = x % max_width;
@@ -116,7 +129,8 @@ impl Font {
             characters,
             texture,
             font,
-            smallest_ymin
+            smallest_ymin,
+            greatest_y
         })
     }
 
@@ -134,12 +148,68 @@ impl Font {
         [[left, bottom], [left, top], [right, bottom], [right, top]]
     }
 
-    fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(Vec<RectangleBuilder>, Bounds), SimpleError> {
+    pub fn get_char_pixel_width(&self, c: char, next_c: Option<char>, scale: f32) -> f32 {
+        let (_, metrics) = self.characters.get(&c)
+        .ok_or(SimpleError::new("That character hasn't been loaded in this font!")).unwrap();
+
+        let mut character_width = scale * metrics.advance_width;
+        if let Some(next_c) = next_c {
+            character_width += scale * self.font.horizontal_kern(c, next_c, 1f32).unwrap_or(0f32)
+        }
+        character_width
+    }
+
+    pub fn get_str_pixel_width(&self, text: &str, scale: f32) -> f32 {
+        let mut width = 0f32;
+
+        for character in text.chars() {
+            let (_, metrics) = self.characters.get(&character)
+                .ok_or(SimpleError::new("That character hasn't been loaded in this font!")).unwrap();
+
+            width += metrics.bounds.width * scale;
+        }
+
+        width
+    }
+
+    pub fn layout_character(&self, c: char, next_char: Option<char>, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(f32, RectangleBuilder), SimpleError> {
+        origin.1 += -self.smallest_ymin * scale;
+        
+        let (tex_coords, metrics) = self.characters.get(&c)
+                .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?;
+            
+        if metrics.bounds.ymin < self.smallest_ymin {
+            panic!("Uh oh!");
+        }
+
+        //get the bottom left position 
+        let bottom = origin.1 + (metrics.bounds.ymin * scale);
+        let height = metrics.bounds.height * scale;
+        let left = origin.0 + (metrics.bounds.xmin * scale);
+        let width = metrics.bounds.width * scale;
+
+        let rectangle = RectangleBuilder::default()
+            .position(left, bottom)
+            .size(width, height)
+            .tex_coords(*tex_coords)
+            .depth(depth);
+
+        if let Some(next_character) = next_char {
+            if let Some(kerning) = self.font.horizontal_kern(c, next_character, 1f32) {
+                origin.0 += (metrics.advance_width + kerning) * scale;
+            }
+        }
+        origin.0 += metrics.advance_width * scale;
+
+        Ok((origin.0, rectangle))
+        
+    
+    }
+
+    pub fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(Bounds, Vec<RectangleBuilder>), SimpleError> {
         origin.1 += -self.smallest_ymin * scale;
         
         let left = origin.0;
-        let mut max_y = None;
-        let mut min_y = None;
 
         let mut rectangles = Vec::new();
         let characters = text.chars().collect::<Vec<_>>();
@@ -147,22 +217,15 @@ impl Font {
             let (tex_coords, metrics) = self.characters.get(c)
                 .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?;
             
+            if metrics.bounds.ymin < self.smallest_ymin {
+                panic!("Uh oh!");
+            }
+
             //get the bottom left position 
             let bottom = origin.1 + (metrics.bounds.ymin * scale);
             let height = metrics.bounds.height * scale;
             let left = origin.0 + (metrics.bounds.xmin * scale);
             let width = metrics.bounds.width * scale;
-
-            let min_y = min_y.get_or_insert(bottom);
-            if bottom < *min_y {
-                *min_y = bottom;
-            }
-
-            let top = bottom + height;
-            let max_y = max_y.get_or_insert(top);
-            if top > *max_y {
-                *max_y = top;
-            }
 
             rectangles.push(RectangleBuilder::default()
                 .position(left, bottom)
@@ -182,46 +245,26 @@ impl Font {
 
         let right = origin.0;
 
-        Ok((rectangles, Bounds { left, right, top: max_y.unwrap(), bottom: min_y.unwrap()}))
+        Ok((Bounds { left, right, top: scale * self.greatest_y, bottom: scale * self.smallest_ymin}, rectangles))
     }
 
 }
 
-pub struct TextBoxFactory {
-    material_handle: MaterialHandle,
-    font: Font,
-}
+pub fn prepare_font(renderer: &mut Renderer, font: &str) -> Result<(MaterialHandle, Font), SimpleError> {
+    let font = Font::load(renderer, font)?;
 
-impl TextBoxFactory {
-    pub fn new(renderer: &mut Renderer, font: &str) -> Result<Self, SimpleError> {
-        let font = Font::load(renderer, font)?;
+    let text_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/text_shader.wgsl"))?;
+    let pipeline_handle = renderer.create_pipeline(text_pipeline);
 
+    let material_handle = renderer.create_material(pipeline_handle)?;
+    renderer.update_material(material_handle, "t_diffuse", font.texture.clone());
 
-        let text_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/text_shader.wgsl"))?;
-        let pipeline_handle = renderer.create_pipeline(text_pipeline);
+    let sampler = Sampler::new(renderer.create_sampler());
+    renderer.update_material(material_handle, "s_diffuse", sampler);
 
-        let material_handle = renderer.create_material(pipeline_handle)?;
-        renderer.update_material(material_handle, "t_diffuse", font.texture.clone());
-
-        let sampler = Sampler::new(renderer.create_sampler());
-        renderer.update_material(material_handle, "s_diffuse", sampler);
-
-        Ok(Self {
-            material_handle,
-            font
-        })
-    }
-
-    pub fn create(&self, text: &str, position: (f32, f32), depth: f32, scale: f32, color: [f32; 3]) -> (Bounds, Vec<(Rectangle, MaterialHandle, RenderStage)>) {    
-        self.font.layout_text(text, position, scale, depth)
-        .map(|(rects, bounds)| {
-            let elements = rects
-                .into_iter()
-                .map(|rect| (rect.color(color).build(), self.material_handle, RenderStage { order: 1 }))
-                .collect::<Vec<_>>();
-            
-            (bounds, elements)
-        }).unwrap()
-    }
+    Ok((
+        material_handle,
+        font
+    ))
 }
 

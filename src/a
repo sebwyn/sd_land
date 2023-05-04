@@ -1,0 +1,23 @@
+(use_declaration argument: 
+    (scoped_use_list path: 
+        (identifier) 
+        list: (use_list 
+            (scoped_identifier 
+                path: (identifier) 
+                name: (identifier)) 
+            (scoped_identifier 
+                path: (identifier) 
+                name: (identifier)) 
+            (scoped_identifier 
+                path: (identifier) 
+                name: (identifier)) 
+            (scoped_identifier 
+                path: (identifier) 
+                name: (identifier)) 
+            (scoped_identifier 
+                path: (identifier) 
+                name: (identifier)
+            )
+        )
+    )
+)

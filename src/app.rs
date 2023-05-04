@@ -8,39 +8,47 @@ use winit::{
 };
 
 use crate::{
-    renderer::Renderer, camera::{Camera, camera_on_event}, view::View, buffer::Buffer, system::Systems, graphics::Visible, file_searcher::emplace_find_menu, text::TextBoxFactory, ui_box::UiBoxFactory, shortcuts::trigger_shortcuts
+    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::Visible, shortcuts::trigger_shortcuts, text::prepare_font, cursor::{cursor_on_event, Cursor}
 };
 
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
-    let text_factory = TextBoxFactory::new(renderer, "Roboto Mono").unwrap();
-    let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
+    let (text_material, font) = prepare_font(renderer, "Roboto Mono").unwrap();
 
     let file = env::args().skip(1).next().expect("Expected a file to be passed!");
     println!("file {}", file);
 
     //create the camera
-    let camera = Camera::new(1600, 2400);
+    let camera = Camera::new(3200, 2400);
     //create a view
-    let view = View::new(0, 1600, 2400, 0, -100.0, 100.0);
-    let view_entity = world.push((view, camera));
-
-    world.entry(view_entity).unwrap().add_component(Visible);
+    let view = View::new(0, 3200, 2400, 0, -100.0, 100.0);
+    let view_entity = world.push((view, camera, Visible));
 
     //create a buffer
-    let buffer = Buffer::load(&file).unwrap();
+    let buffer = Buffer::load(
+        &file, 
+        50f32, 
+        ColorScheme::default(), 
+        font.clone(),
+        0.6f32,
+    ).unwrap();
 
-    buffer.emplace_in_view(renderer, world, view_entity, None, 50f32, 0.65, "Roboto Mono");
+    let buffer_entity = world.push((buffer, text_material, ViewRef(view_entity)));
 
-    let file_searcher = emplace_find_menu(world, &text_factory, &ui_box_factory).unwrap();
-    //add an entity ref onto this entity
-    world.entry(file_searcher).unwrap()
-        .add_component(EnttRef(file_searcher));
+    let cursor = Cursor::new(buffer_entity, view_entity);
+
+    world.push((cursor,));
+
+    // let file_searcher = emplace_find_menu(world, &text_factory, &ui_box_factory).unwrap();
+    // //add an entity ref onto this entity
+    // world.entry(file_searcher).unwrap()
+    //     .add_component(EnttRef(file_searcher));
 
     //create the shortcuts
-    systems.register_event_systems(camera_on_event);
+    systems.register_event_systems(buffer_on_event);
     systems.register_event_systems(trigger_shortcuts);
+    systems.register_event_systems(cursor_on_event)
 
     // let ui_box = 
     //     UiBoxFactory::new(renderer).unwrap().create("#FFFFFF", (0f32, 0f32), (400f32, 300f32), 0.5)

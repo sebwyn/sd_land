@@ -19,8 +19,10 @@ impl UiBoxFactory {
         })
     }
 
+    pub fn material(&self) -> MaterialHandle { self.material_handle }
+
     pub fn create(&self, color: &str, position: (f32, f32), size: (f32, f32), depth: f32) 
-        -> Result<(Rectangle, MaterialHandle, RenderStage), SimpleError> 
+        -> Result<Vec<Vertex>, SimpleError> 
     {
         //convert a hex color here
         let color = hex_color(color)?;
@@ -32,7 +34,7 @@ impl UiBoxFactory {
             .depth(depth)
             .build();
 
-        Ok((rectangle, self.material_handle, RenderStage { order: 0 }))
+        Ok(Vec::from(rectangle.vertices))
     }
 }
 

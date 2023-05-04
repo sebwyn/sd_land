@@ -14,3 +14,4 @@ pub mod buffer;
 pub mod view;
 pub mod shortcuts;
 pub mod file_searcher;
+pub mod cursor;

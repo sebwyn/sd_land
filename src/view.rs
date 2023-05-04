@@ -1,4 +1,5 @@
 use legion::{Entity, IntoQuery, World};
+use winit::dpi::PhysicalPosition;
 
 use crate::system::Event;
 
@@ -32,6 +33,15 @@ impl View {
     pub fn y_pos(&self) -> f32 { self.top as f32 }
     pub fn width(&self) -> f32 { (self.right - self.left) as f32}
     pub fn height(&self) -> f32 { (self.bottom - self.top) as f32 }
+
+    pub fn contains_point(&self, point: &PhysicalPosition<f64>) -> bool {
+        if self.left < point.x as u32 && self.right > point.x as u32 {
+            if self.top < point.y as u32 && self.bottom > point.y as u32 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl View {

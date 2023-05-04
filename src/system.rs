@@ -1,5 +1,7 @@
+use std::default;
+
 use legion::World;
-use winit::{dpi::{PhysicalSize, PhysicalPosition}, event::ModifiersState};
+use winit::{dpi::{PhysicalSize, PhysicalPosition}, event::{ModifiersState, MouseButton}};
 
 pub trait System {
     fn init(systems: &mut Systems);
@@ -9,6 +11,7 @@ pub struct Systems {
     event_systems: Vec<fn(&mut World, &Event)>,
 
     key_modifiers: ModifiersState,
+    mouse_position: PhysicalPosition<f64>,
 }
 
 #[derive(Debug)]
@@ -21,6 +24,7 @@ pub enum Key {
     Right,
     Down,
     Tab,
+    Backspace,
 }
 
 impl Key {
@@ -71,9 +75,10 @@ impl Key {
 #[derive(Debug)]
 pub enum Event {
     Resize(PhysicalSize<u32>),
-    MouseScroll(PhysicalPosition<f64>),
+    MouseScroll(PhysicalPosition<f64>, PhysicalPosition<f64>),
     KeyPress(Key, ModifiersState),
-    KeyRelease(Key, ModifiersState)
+    KeyRelease(Key, ModifiersState),
+    MousePress(MouseButton, PhysicalPosition<f64>),
 }
 
 impl Systems {
@@ -81,6 +86,7 @@ impl Systems {
         Self {
             event_systems: Vec::new(),
             key_modifiers: ModifiersState::default(),
+            mouse_position: PhysicalPosition::<f64>::default()
         }
     }
 
@@ -110,8 +116,7 @@ impl Systems {
                     },
                     winit::event::WindowEvent::MouseWheel { delta, .. } => {
                         if let winit::event::MouseScrollDelta::PixelDelta(delta) = delta {
-                            // println!("Mouse scroll: {:?}, phase: {:?}", delta, phase);
-                            let mouse_scroll = Event::MouseScroll(*delta);
+                            let mouse_scroll = Event::MouseScroll(*delta, self.mouse_position);
                             self.notify_event_systems(world, mouse_scroll)
                         }
                     },
@@ -132,6 +137,8 @@ impl Systems {
                                     winit::event::VirtualKeyCode::Right => Key::Right,
                                     winit::event::VirtualKeyCode::Down => Key::Down,
                                     winit::event::VirtualKeyCode::Tab => Key::Tab,
+                                    // winit::event::VirtualKeyCode::Delete => Key::Backspace,
+                                    winit::event::VirtualKeyCode::Back => Key::Backspace,
                                     
                                     winit::event::VirtualKeyCode::Space => Key::char(' '),
                                     winit::event::VirtualKeyCode::Caret => Key::char('^'),
@@ -162,8 +169,20 @@ impl Systems {
                             self.notify_event_systems(world, event);
                         }
                     },
+                    winit::event::WindowEvent::MouseInput { state, button, .. } => {
+                        match state {
+                            winit::event::ElementState::Pressed => {
+                                let event = Event::MousePress(*button, self.mouse_position);
+                                self.notify_event_systems(world, event);
+                            },
+                            _ => {}
+                        }
+                    }
                     winit::event::WindowEvent::ModifiersChanged(modifiers) => {
                         self.key_modifiers = *modifiers;
+                    },
+                    winit::event::WindowEvent::CursorMoved { position, .. } => {
+                        self.mouse_position = *position;
                     },
                     _ => {}
                 }

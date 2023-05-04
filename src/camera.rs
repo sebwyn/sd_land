@@ -1,8 +1,7 @@
 use cgmath::{Point3, Vector3};
-use legion::{World, IntoQuery, component};
 use winit::dpi::PhysicalPosition;
 
-use crate::{system::Event, graphics::Vertex, file_searcher::FileSearcher};
+use crate::graphics::Vertex;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -13,8 +12,8 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 );
 
 pub struct Camera {
-    eye: cgmath::Point3<f32>,
-    target: cgmath::Point3<f32>,
+    pub eye: cgmath::Point3<f32>,
+    pub target: cgmath::Point3<f32>,
     up: cgmath::Vector3<f32>, 
     bottom: f32,
     left: f32,
@@ -44,6 +43,14 @@ impl Camera {
         }
     }
 
+    pub fn view_bottom(&self) -> f32 {
+        self.eye.y - 50f32
+    }
+
+    pub fn view_top(&self) -> f32 {
+        (self.eye.y + self.height) + 50f32
+    }
+
     pub fn matrix(&self) -> cgmath::Matrix4<f32> {
             let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
             // let view = cgmath::Matrix4::identity();
@@ -70,31 +77,50 @@ impl Camera {
             false
         }
     }
-}
 
-pub fn camera_on_event(world: &mut World, event: &Event) {
-    match event {
-        Event::Resize(new_size) => {
-            let mut camera_query = <&mut Camera>::query();
-    
-            // for camera in camera_query.iter_mut(world) {
-            //     camera.width = new_size.width as f32;
-            //     camera.height = new_size.height as f32;
-            // }
-        }
-        Event::MouseScroll(PhysicalPosition::<f64> { y, .. }) => {
-            let mut camera_query = <&mut Camera>::query()
-                .filter(!component::<FileSearcher>());
-    
-            for camera in camera_query.iter_mut(world) {
-                camera.eye.y += *y as f32;
-                camera.target.y = camera.eye.y;
+    pub fn contains_point(&self, point: &PhysicalPosition<f64>) -> bool {    
+        let top = self.eye.y + self.height;
+        let bottom = self.eye.y; 
+        let right = self.eye.x + self.width;
+        let left = self.eye.x; 
 
-                // camera.eye.x -= *x as f32;
-                // camera.target.x = camera.eye.x;
-
+        if left < point.x as f32 && right > point.x as f32 {
+            if bottom < point.y as f32 && top > point.y as f32 {
+                return true;
             }
-        },
-        _ => {}
+        }
+        false
+    }
+
+    pub fn view_to_world(&self, point: &PhysicalPosition<f64>) -> (f32, f32) {
+        println!("{:?}", self.eye);
+        (self.eye.x + point.x as f32, (self.eye.y + self.height) - point.y as f32)
     }
 }
+
+// pub fn camera_on_event(world: &mut World, event: &Event) {
+//     match event {
+//         Event::Resize(new_size) => {
+//             let mut camera_query = <&mut Camera>::query();
+    
+//             // for camera in camera_query.iter_mut(world) {
+//             //     camera.width = new_size.width as f32;
+//             //     camera.height = new_size.height as f32;
+//             // }
+//         }
+//         Event::MouseScroll(PhysicalPosition::<f64> { y, .. }, ..) => {
+//             let mut camera_query = <&mut Camera>::query()
+//                 .filter(!component::<FileSearcher>());
+    
+//             for camera in camera_query.iter_mut(world) {
+//                 camera.eye.y += *y as f32;
+//                 camera.target.y = camera.eye.y;
+
+//                 // camera.eye.x -= *x as f32;
+//                 // camera.target.x = camera.eye.x;
+
+//             }
+//         },
+//         _ => {}
+//     }
+// }

@@ -1,11 +1,11 @@
 use legion::{World, Entity};
 use simple_error::SimpleError;
 
-use crate::{text::TextBoxFactory, renderer::Renderer, camera::Camera, view::{View, ViewRef}, system::Event, ui_box::{UiBoxFactory, self}};
+use crate::{camera::Camera, view::{View, ViewRef}, system::Event, ui_box::UiBoxFactory, text::Font};
 
 pub struct FileSearcher;
 
-pub fn emplace_find_menu(world: &mut World, text_factory: &TextBoxFactory, ui_box_factory: &UiBoxFactory) -> Result<Entity, SimpleError> {
+pub fn emplace_find_menu(world: &mut World, font: Font, ui_box_factory: &UiBoxFactory) -> Result<Entity, SimpleError> {
     //create
     let width = 800;
     let height = 600;
@@ -16,8 +16,8 @@ pub fn emplace_find_menu(world: &mut World, text_factory: &TextBoxFactory, ui_bo
     let view_entity = world.push((FileSearcher, camera, view));
 
     //create the Ui Box for this thing
-    let (rect, material, stage) = ui_box_factory.create("#424B54", (0f32, 0f32), (width as f32, height as f32), 0.5)?;
-    world.push((rect, material, stage, ViewRef(view_entity)));
+    let vertices = ui_box_factory.create("#424B54", (0f32, 0f32), (width as f32, height as f32), 0.5)?;
+    world.push((vertices, ui_box_factory.material(), ViewRef(view_entity)));
 
     Ok(view_entity)
 }

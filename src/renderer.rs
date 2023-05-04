@@ -42,18 +42,18 @@ impl Renderer {
     pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
         let _ = Instant::now();
         
-        let mut viewed_elements = <(&Rectangle, &MaterialHandle, &RenderStage, &ViewRef)>::query();
+        let mut viewed_elements = <(&crate::buffer::Buffer, &MaterialHandle, &ViewRef)>::query();
 
         //sort the elements by which view their in
-        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&Rectangle>>> = HashMap::new();
-        for (rectangle, material, _, view, ..) in viewed_elements.iter(world) {
+        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&crate::buffer::Buffer>>> = HashMap::new();
+        for (buffer, material, view) in viewed_elements.iter(world) {
             let view = elements_by_view.entry(view.0)
                 .or_insert(HashMap::new());
             
             let material_vec = view.entry(*material)
                 .or_insert(Vec::new());
 
-            material_vec.push(rectangle);
+            material_vec.push(buffer);
         }
 
         self.graphics.begin_render([0f32, 0f32, 0f32])?;
@@ -67,6 +67,10 @@ impl Renderer {
             if !is_visible {
                 continue;
             }
+
+            let view_bottom_y = camera.view_bottom();
+            let view_top_y = camera.view_top();
+
 
             let view_proj_matrix = Matrix::from(camera.matrix());
 
@@ -88,21 +92,16 @@ impl Renderer {
             }
 
             let mut render_tasks = Vec::new();
-            for (material, rectangles) in rects_by_material.iter() {
-                
-                // println!("{}\n{:#?}", material, rectangles);
+            for (material, vertex_sets) in rects_by_material.iter() {
 
                 let material_info = match self.materials.get(material) {
                     Some(material) => material,
                     None => continue,
                 };
 
-                let vertices: Vec<Vertex> = rectangles
-                    .iter()
-                    .filter(|rect| camera.is_visible(&rect.vertices))
-                    .flat_map(|rect| rect.vertices)
-                    .collect();
-
+                let vertices: Vec<Vertex> = 
+                    vertex_sets.iter().flat_map(|v| v.render(view_top_y, view_bottom_y)).collect::<Vec<_>>();
+                    
                 let num_rectangles = vertices.len() / 4;
                 let indices = (0..num_rectangles)
                     .flat_map(|i| 
@@ -349,8 +348,6 @@ impl Graphics {
 
             for task in work.iter() {
                 if let Some(view) = &task.view {
-                    // println!("{}, {}", view.x_pos(self.config.width), view.y_pos(self.config.height));
-                    // println!("{}, {}", view.width(self.config.width), view.height(self.config.height));
                     
                     render_pass.set_viewport(
                         view.x_pos(), 
