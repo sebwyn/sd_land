@@ -1,10 +1,4 @@
-use std::{rc::Rc, cell::RefCell};
-
 pub struct Visible;
-
-pub struct VertexProvider {
-    vertices: Rc<RefCell<Vec<Vertex>>>
-}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -70,27 +64,21 @@ impl RectangleBuilder {
         self.tex_coords = tex_coords; self
     }
 
-    pub fn build(self) -> Rectangle {
-        
-        Rectangle {
-            vertices: [
-                //bottom left
-                Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[0] }, 
-                //top left
-                Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[1] }, 
-                //bottom right
-                Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[2] }, 
-                //top right
-                Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[3] }, 
-            ]
-        }
+    pub fn build(self) -> Vec<Vertex> {
+        vec![
+            //bottom left
+            Vertex { position: [self.x,            self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[0] }, 
+            //top left
+            Vertex { position: [self.x,            self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[1] }, 
+            //bottom right
+            Vertex { position: [self.x+self.width, self.y,             self.depth], color: self.color, tex_coords: self.tex_coords[2] }, 
+            //top right
+            Vertex { position: [self.x+self.width, self.y+self.height, self.depth], color: self.color, tex_coords: self.tex_coords[3] }, 
+        ]
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rectangle {
-    pub vertices: [Vertex; 4]
-}
+pub struct Rectangle;
 
 impl Rectangle {
     //bl, br, tl, tl, br, tr

@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::{
-    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::Visible, shortcuts::trigger_shortcuts, text::prepare_font, cursor::{cursor_on_event, Cursor}
+    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::{Visible, Vertex}, shortcuts::trigger_shortcuts, text::prepare_font, cursor::{cursor_on_event, Cursor}
 };
 
 pub struct EnttRef(pub Entity);
@@ -34,27 +34,16 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         0.6f32,
     ).unwrap();
 
-    let buffer_entity = world.push((buffer, text_material, ViewRef(view_entity)));
+    let buffer_entity = world.push((buffer, text_material, ViewRef(view_entity), Vec::<Vertex>::new()));
 
     let cursor = Cursor::new(buffer_entity, view_entity);
 
     world.push((cursor,));
 
-    // let file_searcher = emplace_find_menu(world, &text_factory, &ui_box_factory).unwrap();
-    // //add an entity ref onto this entity
-    // world.entry(file_searcher).unwrap()
-    //     .add_component(EnttRef(file_searcher));
-
     //create the shortcuts
     systems.register_event_systems(buffer_on_event);
     systems.register_event_systems(trigger_shortcuts);
     systems.register_event_systems(cursor_on_event)
-
-    // let ui_box = 
-    //     UiBoxFactory::new(renderer).unwrap().create("#FFFFFF", (0f32, 0f32), (400f32, 300f32), 0.5)
-    //     .unwrap();
-
-    // world.push(ui_box);
 }
 
 pub fn run() {
@@ -68,8 +57,6 @@ pub fn run() {
     let mut world = World::default();
 
     let mut systems = Systems::new();
-
-    // window.set_decorations(false);
 
     initialize_world(&mut renderer, &mut world, &mut systems);
 
@@ -102,6 +89,8 @@ pub fn run() {
                 _ => {}
             },
             Event::RedrawRequested(_) => {
+                systems.prepare_render(&mut world);
+
                 match renderer.render(&world) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => renderer.find_display(),

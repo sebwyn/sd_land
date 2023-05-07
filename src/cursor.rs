@@ -6,7 +6,7 @@ use crate::{system::{Event, Key}, buffer::Buffer, view::View, camera::Camera};
 pub struct Cursor {
     buffer: Entity,
     camera: Entity,
-    position: (usize, (usize, usize)), //row column position in the buffer
+    position: usize,
 }
 
 impl Cursor {
@@ -14,13 +14,12 @@ impl Cursor {
         Self {
             buffer,
             camera,
-            position: (0, (0, 0))
+            position: 0
         }
     }
 }
 
 pub fn cursor_on_event(world: &mut World, event: &Event) {
-    
     match event {
         Event::MousePress(button, position) if matches!(button, MouseButton::Left) => {
             let mut cursor_query = <&Cursor>::query();
@@ -67,7 +66,7 @@ pub fn cursor_on_event(world: &mut World, event: &Event) {
             let mut cursor_query = <&mut Cursor>::query();
 
             for (i, cursor) in cursor_query.iter_mut(world).enumerate() {
-                cursor.position = buffer_positions[i];
+                cursor.position = buffer_positions[i].0;
             }
 
         },
@@ -106,12 +105,10 @@ pub fn cursor_on_event(world: &mut World, event: &Event) {
             let mut cursor_query = <&mut Cursor>::query();
             for cursor in cursor_query.iter_mut(world) {
                 
-                if let Some(character) = character {
-                    cursor.position.0 += 1;
-                    cursor.position.1.1 += 1;
+                if character.is_some() {
+                    cursor.position += 1;
                 } else if matches!(key, Key::Backspace) {
-                    cursor.position.0 -= 1;
-                    cursor.position.1.1 -= 1;
+                    cursor.position -= 1;
                 }
             }
         },

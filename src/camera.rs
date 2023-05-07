@@ -11,6 +11,7 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 1.0,
 );
 
+#[derive(Clone)]
 pub struct Camera {
     pub eye: cgmath::Point3<f32>,
     pub target: cgmath::Point3<f32>,
@@ -97,30 +98,3 @@ impl Camera {
         (self.eye.x + point.x as f32, (self.eye.y + self.height) - point.y as f32)
     }
 }
-
-// pub fn camera_on_event(world: &mut World, event: &Event) {
-//     match event {
-//         Event::Resize(new_size) => {
-//             let mut camera_query = <&mut Camera>::query();
-    
-//             // for camera in camera_query.iter_mut(world) {
-//             //     camera.width = new_size.width as f32;
-//             //     camera.height = new_size.height as f32;
-//             // }
-//         }
-//         Event::MouseScroll(PhysicalPosition::<f64> { y, .. }, ..) => {
-//             let mut camera_query = <&mut Camera>::query()
-//                 .filter(!component::<FileSearcher>());
-    
-//             for camera in camera_query.iter_mut(world) {
-//                 camera.eye.y += *y as f32;
-//                 camera.target.y = camera.eye.y;
-
-//                 // camera.eye.x -= *x as f32;
-//                 // camera.target.x = camera.eye.x;
-
-//             }
-//         },
-//         _ => {}
-//     }
-// }

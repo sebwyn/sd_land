@@ -1,21 +1,19 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::{fs::File, io::Read, path::Path};
 
 use std::str;
 
-use legion::{World, IntoQuery};
+use legion::{World, IntoQuery, EntityStore};
 use simple_error::SimpleError;
-use tree_sitter::{Node, QueryCursor, Tree, Parser, InputEdit, Point, TreeCursor};
-use winit::dpi::PhysicalPosition;
+use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent};
 
 use crate::camera::Camera;
 use crate::graphics::Vertex;
-use crate::system::Event;
+use crate::system::{Event, Key};
 use crate::text::Font;
 use crate::view::{ViewRef, View};
 use crate::ui_box::hex_color;
-
-//line_height: 50f32, scale: 
 
 pub struct ColorScheme {
     text_color: [f32; 3],
@@ -28,7 +26,7 @@ pub struct ColorScheme {
     operator_color: [f32; 3],
     comment_color: [f32; 3],
     punctuation_color: [f32; 3],
-    line_number_color: [f32; 3],  
+    line_number_color: [f32; 3]
 }
 
 impl Default for ColorScheme {
@@ -100,8 +98,69 @@ impl ColorSchemeBuilder {
 
 }
 
-pub fn buffer_on_event(world: &mut World, event: &Event) {
+const RUST_HIGHLIGHT_NAMES: &'static [&'static str] = &[
+    "function",
+    "function.method",
+    "function.macro",
+    "type",
+    "type.builtin",
+    "constructor",
+    "keyword",
+    "escape",
+    "constant.builtin",
+    "property",
+    "operator",
+    "comment",
+    "string",
+    "punctuation"
+];
+
+pub fn buffer_on_event(world: &mut World, event: &Event) { 
     match event {
+        Event::PrepareRender => {
+            let mut camera_query = <(&Buffer, &ViewRef)>::query();
+
+            let mut cameras = HashMap::new();
+
+            for (_, view) in camera_query.iter(world) {
+                
+                if !cameras.contains_key(&view.0) {
+                    let camera_entity = world.entry_ref(view.0).expect("Expected buffer to be in a view");
+
+                    let camera = camera_entity.get_component::<Camera>()
+                        .expect("Expected View to have an associated camera!");
+                    
+                    cameras.insert(view.0, camera.clone());
+                }
+            } 
+
+            let mut buffer_query = <(&Buffer, &mut Vec<Vertex>, &ViewRef)>::query();
+            
+            for (buffer, vertices, view) in buffer_query.iter_mut(world) {
+                let camera = cameras.get(&view.0).expect("No camera found for view!");
+                
+                let view_top = camera.view_top();
+                let view_bottom = camera.view_bottom();
+
+                let new_vertices = buffer.render(view_top, view_bottom);
+
+                *vertices = new_vertices;
+            }
+        },
+        Event::KeyPress(key, modifiers) => {
+            if modifiers.logo() && !modifiers.shift() {
+                match key {
+                    Key::Char(s, ..) if *s == 's' => {
+                        let mut query = <&Buffer>::query();
+                        for buffer in query.iter(world) {
+                            buffer.save();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         Event::MouseScroll(scroll, position) => {
             let mut query = <(&Buffer, &ViewRef)>::query();
             
@@ -139,10 +198,15 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
     }
 }
 
-type HighlightGroups = Vec<(String, usize, usize)>;
+#[derive(Debug)]
+struct Highlight {
+    code_type: Option<usize>,
+    start_byte: usize,
+    end_byte: usize,
+}
 
 pub struct Buffer {
-    _file: String,
+    file: String,
     source_code: String,
     
     line_height: f32,
@@ -151,157 +215,135 @@ pub struct Buffer {
     font_scale: f32,
     font: Font,
 
-    treesitter_tree: Option<Tree>,
-    highlights: Option<Vec<HighlightGroups>>,
-    treesitter_parser: Option<Parser>,
+    highlight_enabled: bool,
+    rust_highlight_configuration: HighlightConfiguration,
+    highlighter: Highlighter,
+
+    highlights: Vec<Highlight>,
 }
 
 
 impl Buffer {
-    pub fn remove_at(&mut self, position: (usize, (usize, usize))) {
-        self.source_code.remove(position.0 - 1);
+    pub fn save(&self) {
+        let mut file = File::create(&self.file)
+            .expect("Could not find file to save to");
 
-        //update the tree and relevant highlights
-        if let Some(tree) = &mut self.treesitter_tree {
-            
-            let input_edit = InputEdit { 
-                start_byte: position.0 - 1, 
-                old_end_byte: position.0 + 1, 
-                new_end_byte: position.0,
-
-                start_position: Point { row: position.1.0, column: position.1.1 - 1 }, 
-                old_end_position: Point { row: position.1.0, column: position.1.1 + 1}, 
-                new_end_position: Point { row: position.1.0, column: position.1.1 },
-            };
-
-            tree.edit(&input_edit);
-            self.treesitter_tree = Some(self.treesitter_parser
-                .as_mut()
-                .unwrap()
-                .parse(self.source_code.as_bytes(), Some(tree))
-                .unwrap()
-            );
-
-            self.micro_update_highlight(position)
-        }
-
+        file.write_all(self.source_code.as_bytes()).expect("Failed to write to file!");
     }
 
-    pub fn insert_at(&mut self, character: char, position: (usize, (usize, usize))) {
-        self.source_code.insert(position.0, character);
+    pub fn remove_at(&mut self, position: usize) {
+        self.source_code.remove(position - 1);
 
-        //update the tree and relevant highlights
-        if let Some(tree) = &mut self.treesitter_tree {
-            
-            let input_edit = InputEdit { 
-                start_byte: position.0, 
-                old_end_byte: position.0 + 1, 
-                new_end_byte: position.0 + 2,
+        if self.highlight_enabled { self.update_highlights(); }
+    }   
 
-                start_position: Point { row: position.1.0, column: position.1.1 }, 
-                old_end_position: Point { row: position.1.0, column: position.1.1 + 1}, 
-                new_end_position: Point { row: position.1.0, column: position.1.1 + 2},
-            };
+    pub fn insert_at(&mut self, character: char, position: usize) {
+        self.source_code.insert(position, character);
 
-            tree.edit(&input_edit);
-            self.treesitter_tree = Some(self.treesitter_parser
-                .as_mut()
-                .unwrap()
-                .parse(self.source_code.as_bytes(), Some(tree))
-                .unwrap()
-            );
-
-            self.micro_update_highlight(position)
-        }
-
+        if self.highlight_enabled { self.update_highlights(); }
     }
 
-    pub fn micro_update_highlight(&mut self, position: (usize, (usize, usize))) {
-        let root_node = self.treesitter_tree.as_ref().unwrap().root_node();
-        //get the byte offsets of the line
-        let line = self.source_code.lines().skip(position.1.0).next().unwrap();
-        let line_len = line.len();
-
-        let start_line = position.0 - position.1.1;
-        let end_line = start_line + line_len;
-
-        println!("{}", line);
-        println!("LINE: {}", &self.source_code[start_line..end_line]);
-
-        let node = root_node.descendant_for_byte_range(start_line, end_line).unwrap();
-        println!("FOUND line node: {:?}", node.utf8_text(self.source_code.as_bytes()));
-
-        println!("{}", node.to_sexp());
-        println!("{}", node.start_byte());
-        println!("{}", node.end_byte());
-        println!("{:?}", self.source_code.get(node.start_byte()..node.end_byte()));
-
-        //execute a query on that node and update all the lines
-        let mut new_highlights: HashMap<usize, HighlightGroups> = HashMap::new();
-        for (line, highlight) in query_highlight(node, &self.source_code).into_iter() {
-            let highlight_group = new_highlights.entry(line)
-                .or_insert(Vec::new());
+    pub fn update_highlights(&mut self) {
+        let highlights = self.highlighter.highlight(
+            &self.rust_highlight_configuration, 
+            self.source_code.as_bytes(), 
+            None, 
+            |_| None).unwrap();
         
-            highlight_group.push(highlight);
-        }    
-
-
-        for (line, highlight_group) in new_highlights.into_iter() {
-            let highlights = self.highlights
-                .as_mut()
-                .unwrap()
-                .get_mut(line)
-                .unwrap();
-
-            println!("Updating highlight for line: {} og: {}: {:#?}", line, position.1.0, highlight_group);
-
-            highlights.clear();
-            highlights.extend(highlight_group);
-            highlights.sort_by(|(_, start_a, _), (_, start_b, _)| start_a.cmp(start_b));
-            highlights.dedup();
+        self.highlights.clear();
+        
+        let mut currently_no_higlighting = true;
+        for event in highlights {
+            match event.unwrap() {
+                HighlightEvent::Source {start, end} => {
+                    if currently_no_higlighting {
+                        self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
+                    } else {
+                        let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
+                        last_highlight.start_byte = start;
+                        last_highlight.end_byte = end;
+                    }
+                },
+                HighlightEvent::HighlightStart(s) => {
+                    self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
+                    currently_no_higlighting = false;
+                },
+                HighlightEvent::HighlightEnd => {
+                    currently_no_higlighting = true;
+                },
+            }
         }
-
     }
 
     pub fn render(&self, start_y: f32, end_y: f32) -> Vec<Vertex> {
         let start_line = if start_y > 0f32 { 0usize } else { (-start_y / self.line_height) as usize };
         let end_line = if end_y > 0f32 { 0usize } else { (-end_y / self.line_height) as usize };
         
+        let num_lines = end_line - start_line;
+
+        let start_byte: usize = self.source_code.lines().take(start_line).map(|l| l.len() + 1).sum();
+
         let mut vertices = Vec::new();
 
-        let mut vertical_offset = -1f32 * (start_line as f32 * self.line_height);
-        for (number, line) in self.source_code.split('\n').enumerate().take(end_line).skip(start_line) {
-            if line.len() == 0 { vertical_offset -= self.line_height; continue;  }
-            
-            let mut horizontal_offset = 0f32;
-            //render the line numbers
-            if self.highlights.is_some() {
-                let segmented_line = self.segment_line_by_highlight(number, line);
-                for (color, segment) in segmented_line {
-                    if segment.len() == 0 { continue }
-                    
-                    let (bounds, rectangles) = self.font.layout_text(
-                        segment,
-                        (horizontal_offset, vertical_offset),
-                        self.font_scale,
-                        0.5
-                    ).unwrap();
+        let mut highlights = self.highlights.iter()
+            .skip_while(|h| h.start_byte < start_byte)
+            .peekable();
 
-                    vertices.extend(rectangles.into_iter().flat_map(|r| r.color(color).build().vertices));
-                    horizontal_offset = bounds.right;
-                }
-            } else {
-                let (bounds, rectangles) = self.font.layout_text(
-                    line,
-                    (horizontal_offset, vertical_offset),
-                    self.font_scale,
-                    0.5
-                ).unwrap();
+        let mut current_highlight_color = self.colorscheme.text_color;
 
-                vertices.extend(rectangles.into_iter().flat_map(|r| r.color(self.colorscheme.text_color).build().vertices));
+        let mut line = 0usize;
+        let mut offset_x = 0f32;
+        let mut offset_y = -1.0 * start_line as f32 * self.line_height;
+        for byte in start_byte.. {
+            if line > num_lines {
+                break
             }
 
-            vertical_offset -= self.line_height;
+            if self.highlight_enabled  {
+                if let Some(highlight) = highlights.peek() {
+                    if highlight.end_byte <= byte {
+                        highlights.next();
+                        current_highlight_color = self.colorscheme.text_color;
+                    }
+                }
+
+                if let Some(highlight) = highlights.peek() {
+                    if highlight.start_byte <= byte {
+                        let code_type = highlight.code_type
+                            .map(|index| RUST_HIGHLIGHT_NAMES[index])
+                            .unwrap_or("text_color");
+
+                        current_highlight_color = 
+                            get_highlight_for_code_type(code_type, &self.colorscheme);
+                    }
+                }
+            }
+
+            let current_char = self.source_code.as_bytes().get(byte).copied();
+            if current_char.is_none() { break }
+            let current_char = current_char.unwrap() as char;
+
+            if current_char == '\n' {
+                offset_y -= self.line_height;
+                line += 1;
+                offset_x = 0.0;
+                continue;
+            }
+
+            //otherwise print the character nicely
+            let next_character = self.source_code.as_bytes().get(byte + 1).map(|c| *c as char);
+
+            let (right, rectangle) = self.font.layout_character(
+                current_char, 
+                next_character, 
+                (offset_x, offset_y), 
+                self.font_scale, 
+                0.5
+            ).unwrap();
+
+            vertices.extend(rectangle.color(current_highlight_color).build());
+
+            offset_x = right;
         }
 
         vertices
@@ -368,30 +410,27 @@ impl Buffer {
             .map_err(|e| SimpleError::new(&format!("Failed to load the file: {}", e.to_string())))?;
         file.read_to_string(&mut source_code).map_err(|_| SimpleError::new("Failed to read file!"))?;
 
-        let mut treesitter_tree = None;
-        let mut treesitter_parser = None;
-        let mut highlights = None;
-        
         //generate initial highlights if available
+        let mut highlight_enabled = false;
         if let Some(extension) = file_path.extension() {
             match extension.to_str().unwrap() {
-                "rs" => {
-                    let mut parser = tree_sitter::Parser::new();
-                    parser.set_language(tree_sitter_rust::language())
-                        .map_err(|_| SimpleError::new("Failed to load treesitter language"))?;
-                    let tree = parser.parse(source_code.as_bytes(), None)
-                        .ok_or(SimpleError::new("Identified rust file, but failed to parse!"))?;
-                    
-                    highlights = Some(Self::generate_highlights(&tree, &source_code));
-                    treesitter_parser = Some(parser);
-                    treesitter_tree = Some(tree);
-                }
+                "rs" => { highlight_enabled = true; }
                 _ => {}
             }
         };
 
-        Ok(Self {
-            _file: file_name.to_string(),
+        let mut rust_highlight_configuration = HighlightConfiguration::new(
+                tree_sitter_rust::language(),
+                tree_sitter_rust::HIGHLIGHT_QUERY,
+                "",
+                "",
+        ).unwrap();
+        rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
+
+        let highlighter = Highlighter::new();
+
+        let mut buffer = Self {
+            file: file_name.to_string(),
             source_code,
 
             line_height,
@@ -400,48 +439,17 @@ impl Buffer {
             font_scale,
             font,
 
-            treesitter_tree,
-            treesitter_parser,
-            highlights,
+            highlight_enabled,
+            rust_highlight_configuration,
+            highlighter,
 
-        })
+            highlights: Vec::new()
+        };
+
+        if buffer.highlight_enabled { buffer.update_highlights() }
+
+        Ok(buffer)
     }
-
-    fn generate_highlights(tree: &Tree, source_code: &str) -> Vec<HighlightGroups> {
-        let num_lines = source_code.lines().count();
-
-        let mut highlights_by_row = vec![Vec::new(); num_lines];
-
-        for (row, highlight) in query_highlight(tree.root_node(), source_code).into_iter() {
-            highlights_by_row.get_mut(row)
-                .expect("Highlight query identified out of bounds line")
-                .push(highlight);
-        }
-
-        for highlight in highlights_by_row.iter_mut() {
-            highlight.sort_by(|(_, start_a, _), (_, start_b, _)| start_a.cmp(start_b));
-            highlight.dedup_by(|(_, start_a, _), (_, start_b, _)| start_a == start_b);
-        }
-
-        highlights_by_row
-    }
-
-    fn segment_line_by_highlight<'a>(&self, line_num: usize, line: &'a str) -> Vec<([f32; 3], &'a str)> {
-        let highlights = self.highlights.as_ref().unwrap().get(line_num).unwrap();
-        
-        let mut words = Vec::new();
-        let mut current_position = 0;
-        for (code_type, start, end) in highlights {
-            if current_position > *start { continue }
-            words.push((get_highlight_for_code_type("", &self.colorscheme), &line[current_position..*start]));
-            words.push((get_highlight_for_code_type(code_type, &self.colorscheme), &line[*start..*end]));
-            current_position = *end;
-        }
-        words.push((get_highlight_for_code_type("", &self.colorscheme), line.split_at(current_position).1));
-
-        words
-    }
-
 }
 
 fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [f32; 3] {
@@ -476,29 +484,4 @@ r#"
 "#;
 
     format!("{}{}", tree_sitter_rust::HIGHLIGHT_QUERY, QUERY_ADDITION)
-}
-
-
-
-fn query_highlight(node: Node, text: &str) -> Vec<(usize, (String, usize, usize))> {
-    let query = tree_sitter::Query::new(tree_sitter_rust::language(), &query_string()).unwrap();
-
-    QueryCursor::new().matches(&query, node, text.as_bytes()).flat_map(|cap| {
-        let mut nodes = Vec::new();
-
-        for c in cap.captures {
-            nodes.push(
-                (
-                    c.node.start_position().row, 
-                    (
-                        query.capture_names()[c.index as usize].clone(), 
-                        c.node.start_position().column, 
-                        c.node.end_position().column
-                    )
-                )
-            );
-        }
-
-        nodes
-    }).collect::<Vec<_>>()
 }

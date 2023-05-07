@@ -79,6 +79,7 @@ pub enum Event {
     KeyPress(Key, ModifiersState),
     KeyRelease(Key, ModifiersState),
     MousePress(MouseButton, PhysicalPosition<f64>),
+    PrepareRender,
 }
 
 impl Systems {
@@ -100,6 +101,10 @@ impl Systems {
         for event_system in self.event_systems.iter() {
             event_system(world, &event);
         }
+    }
+
+    pub fn prepare_render(&mut self, world: &mut World) {
+        self.notify_event_systems(world, Event::PrepareRender);
     }
 
     pub fn update<T>(&mut self, world: &mut World, event: &winit::event::Event<T>) {

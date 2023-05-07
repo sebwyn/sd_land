@@ -1,7 +1,7 @@
 use regex::Regex;
 use simple_error::SimpleError;
 
-use crate::{pipeline::Pipeline, renderer::{Renderer, MaterialHandle, RenderStage}, graphics::{Rectangle, RectangleBuilder, Vertex}};
+use crate::{pipeline::Pipeline, renderer::{Renderer, MaterialHandle}, graphics::{RectangleBuilder, Vertex}};
 
 pub struct UiBoxFactory {
     material_handle: MaterialHandle
@@ -34,7 +34,7 @@ impl UiBoxFactory {
             .depth(depth)
             .build();
 
-        Ok(Vec::from(rectangle.vertices))
+        Ok(Vec::from(rectangle))
     }
 }
 

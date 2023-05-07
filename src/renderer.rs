@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant, clone};
 use core::fmt::Debug;
 
 use image::ImageBuffer;
@@ -8,7 +8,7 @@ use uuid::Uuid;
 use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, Buffer, util::DeviceExt, RenderPipeline, BindGroup, BindGroupLayout, CommandBuffer, SurfaceTexture, SurfaceError};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{graphics::{Rectangle, Vertex, Visible}, pipeline::Pipeline, material::Material, shader_types::{MaterialValue, Matrix}, camera::Camera, view::{View, ViewRef}};
+use crate::{graphics::{Vertex, Visible, Rectangle}, pipeline::Pipeline, material::Material, shader_types::{MaterialValue, Matrix}, camera::Camera, view::{View, ViewRef}};
 
 pub struct Renderer {
     textures: HashMap<Uuid, wgpu::Texture>,
@@ -42,18 +42,18 @@ impl Renderer {
     pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
         let _ = Instant::now();
         
-        let mut viewed_elements = <(&crate::buffer::Buffer, &MaterialHandle, &ViewRef)>::query();
+        let mut viewed_elements = <(&Vec<Vertex>, &MaterialHandle, &ViewRef)>::query();
 
         //sort the elements by which view their in
-        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&crate::buffer::Buffer>>> = HashMap::new();
-        for (buffer, material, view) in viewed_elements.iter(world) {
+        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&Vec<Vertex>>>> = HashMap::new();
+        for (vertices, material, view) in viewed_elements.iter(world) {
             let view = elements_by_view.entry(view.0)
                 .or_insert(HashMap::new());
             
             let material_vec = view.entry(*material)
                 .or_insert(Vec::new());
 
-            material_vec.push(buffer);
+            material_vec.push(vertices);
         }
 
         self.graphics.begin_render([0f32, 0f32, 0f32])?;
@@ -68,16 +68,11 @@ impl Renderer {
                 continue;
             }
 
-            let view_bottom_y = camera.view_bottom();
-            let view_top_y = camera.view_top();
-
-
             let view_proj_matrix = Matrix::from(camera.matrix());
 
             //udpate all the materials to have a camera
             for (material, _) in rects_by_material.iter() {
                 //try and update the view_proj matrix, may fail, but that is fine
-
                 self.update_material(*material, "view_proj", view_proj_matrix.clone());
                 
                 let material_info = self.materials.get_mut(material).unwrap();
@@ -100,7 +95,7 @@ impl Renderer {
                 };
 
                 let vertices: Vec<Vertex> = 
-                    vertex_sets.iter().flat_map(|v| v.render(view_top_y, view_bottom_y)).collect::<Vec<_>>();
+                    vertex_sets.iter().flat_map(|v| (*v).clone()).collect::<Vec<_>>();
                     
                 let num_rectangles = vertices.len() / 4;
                 let indices = (0..num_rectangles)
