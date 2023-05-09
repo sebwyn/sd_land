@@ -35,12 +35,8 @@ impl View {
     pub fn height(&self) -> f32 { (self.bottom - self.top) as f32 }
 
     pub fn contains_point(&self, point: &PhysicalPosition<f64>) -> bool {
-        if self.left < point.x as u32 && self.right > point.x as u32 {
-            if self.top < point.y as u32 && self.bottom > point.y as u32 {
-                return true;
-            }
-        }
-        false
+        self.left < point.x as u32 && self.right > point.x as u32 &&
+        self.top < point.y as u32 && self.bottom > point.y as u32
     }
 }
 
@@ -55,7 +51,19 @@ impl View {
             far
         }
     }
+
+    pub fn to_view(&self, position: &PhysicalPosition<f64>) -> Option<(f32, f32)> {
+        let x = position.x as f32 - self.left as f32;
+        let y = position.y as f32 - self.top as f32;
+        if x > 0.0 && y > 0.0 && x < self.width() && y < self.height() {
+            Some((x, y))
+        } else {
+            None
+        }
+    }
+    
 }
+
 
 pub fn view_on_event(world: &mut World, event: &Event) {
     if let &Event::Resize(new_size) = event {

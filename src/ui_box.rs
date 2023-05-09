@@ -34,7 +34,7 @@ impl UiBoxFactory {
             .depth(depth)
             .build();
 
-        Ok(Vec::from(rectangle))
+        Ok(rectangle)
     }
 }
 

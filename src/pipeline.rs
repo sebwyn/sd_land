@@ -14,7 +14,7 @@ pub struct Uniform {
     pub naga_type: naga::TypeInner,
 }
 
-impl<'a> Uniform {
+impl Uniform {
     fn new(binding: ResourceBinding, binding_type: wgpu::BindingType, visibility: wgpu::ShaderStages, naga_type: naga::TypeInner) -> Self {
         Self {
             binding,

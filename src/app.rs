@@ -16,13 +16,13 @@ pub struct EnttRef(pub Entity);
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
     let (text_material, font) = prepare_font(renderer, "Roboto Mono").unwrap();
 
-    let file = env::args().skip(1).next().expect("Expected a file to be passed!");
+    let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
 
     //create the camera
-    let camera = Camera::new(3200, 2400);
+    let camera = Camera::new(2400, 2400);
     //create a view
-    let view = View::new(0, 3200, 2400, 0, -100.0, 100.0);
+    let view = View::new(400, 2800, 2400, 0, -100.0, 100.0);
     let view_entity = world.push((view, camera, Visible));
 
     //create a buffer
@@ -30,7 +30,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         &file, 
         50f32, 
         ColorScheme::default(), 
-        font.clone(),
+        font,
         0.6f32,
     ).unwrap();
 

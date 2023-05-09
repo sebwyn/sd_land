@@ -67,16 +67,12 @@ impl Camera {
             OPENGL_TO_WGPU_MATRIX * proj * view
     }
 
+    //oversimplified visibility check
     pub fn is_visible(&self, vertices: &[Vertex]) -> bool {
         let top = (self.eye.y + self.height) + 30f32;
         let bottom = self.eye.y - 30f32;
         
-        //just do a super simple check
-        if bottom < vertices[0].position()[1] && vertices[0].position()[1] < top {
-            true
-        } else {
-            false
-        }
+        bottom < vertices[0].position()[1] && vertices[0].position()[1] < top
     }
 
     pub fn contains_point(&self, point: &PhysicalPosition<f64>) -> bool {    
@@ -85,16 +81,12 @@ impl Camera {
         let right = self.eye.x + self.width;
         let left = self.eye.x; 
 
-        if left < point.x as f32 && right > point.x as f32 {
-            if bottom < point.y as f32 && top > point.y as f32 {
-                return true;
-            }
-        }
-        false
+        left < point.x as f32 && right > point.x as f32 && 
+        bottom < point.y as f32 && top > point.y as f32
     }
 
-    pub fn view_to_world(&self, point: &PhysicalPosition<f64>) -> (f32, f32) {
+    pub fn view_to_world(&self, point: (f32, f32)) -> (f32, f32) {
         println!("{:?}", self.eye);
-        (self.eye.x + point.x as f32, (self.eye.y + self.height) - point.y as f32)
+        (self.eye.x + point.0, (self.eye.y + self.height) - point.1)
     }
 }

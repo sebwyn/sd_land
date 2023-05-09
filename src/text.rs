@@ -202,8 +202,6 @@ impl Font {
         origin.0 += metrics.advance_width * scale;
 
         Ok((origin.0, rectangle))
-        
-    
     }
 
     pub fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(Bounds, Vec<RectangleBuilder>), SimpleError> {

@@ -98,7 +98,7 @@ impl ColorSchemeBuilder {
 
 }
 
-const RUST_HIGHLIGHT_NAMES: &'static [&'static str] = &[
+const RUST_HIGHLIGHT_NAMES: &[&str] = &[
     "function",
     "function.method",
     "function.macro",
@@ -124,14 +124,13 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
 
             for (_, view) in camera_query.iter(world) {
                 
-                if !cameras.contains_key(&view.0) {
+                cameras.entry(view.0).or_insert_with(|| {
                     let camera_entity = world.entry_ref(view.0).expect("Expected buffer to be in a view");
-
                     let camera = camera_entity.get_component::<Camera>()
                         .expect("Expected View to have an associated camera!");
-                    
-                    cameras.insert(view.0, camera.clone());
-                }
+
+                    camera.clone()
+                });
             } 
 
             let mut buffer_query = <(&Buffer, &mut Vec<Vertex>, &ViewRef)>::query();
@@ -352,7 +351,7 @@ impl Buffer {
     pub fn buffer_position(&self, world_position: (f32, f32)) -> (usize, (usize, usize)) {
         //calculate what line we're on
         let row = if world_position.1 < 0.0 {
-            (-world_position.1 as f32 / self.line_height) as usize + 1
+            (-world_position.1 / self.line_height) as usize + 1
         } else {
             0usize
         };
@@ -363,30 +362,27 @@ impl Buffer {
             .map(|line| line.len() + 1)
             .sum();
 
-        let line = self.source_code.lines().skip(row).next().unwrap();
+        let line = self.source_code.lines().nth(row).unwrap();
 
         let mut column = 0usize;
         let mut width = 0f32;
         let mut chars = line.chars().peekable();
-        loop {
-            match chars.next() {
-                Some(c) => { 
-                    let new_width = width + self.font.get_char_pixel_width(c, chars.peek().copied(), self.font_scale); 
-                    if new_width > world_position.0 {
-                        if (new_width - world_position.0).abs() > (width - world_position.0).abs() {
-                            break;
-                        } else {
-                            column += 1;
-                            break;
-                        }
-                    } else {
-                        width = new_width;
-                    }
-                    
-                    if width > world_position.0 { break }
-                },
-                None => break,
+        
+        while let Some(char) = chars.next() {
+            let new_width = width + self.font.get_char_pixel_width(char, chars.peek().copied(), self.font_scale); 
+            if new_width > world_position.0 {
+                if (new_width - world_position.0).abs() > (width - world_position.0).abs() {
+                    break;
+                } else {
+                    column += 1;
+                    break;
+                }
+            } else {
+                width = new_width;
             }
+                
+            if width > world_position.0 { break }
+
             column += 1;
         }
 
@@ -407,15 +403,14 @@ impl Buffer {
 
         let mut source_code = String::new();
         let mut file = File::open(file_path)
-            .map_err(|e| SimpleError::new(&format!("Failed to load the file: {}", e.to_string())))?;
+            .map_err(|e| SimpleError::new(format!("Failed to load the file: {}", e.to_string())))?;
         file.read_to_string(&mut source_code).map_err(|_| SimpleError::new("Failed to read file!"))?;
 
         //generate initial highlights if available
         let mut highlight_enabled = false;
         if let Some(extension) = file_path.extension() {
-            match extension.to_str().unwrap() {
-                "rs" => { highlight_enabled = true; }
-                _ => {}
+            if extension.to_str().unwrap() == "rs" {
+                highlight_enabled = true
             }
         };
 
@@ -470,18 +465,4 @@ fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [
 
         _ => color_scheme.text_color,
     }
-}
-
-fn query_string() -> String {
-    const QUERY_ADDITION: &'static str = 
-r#"
-"=>" @punctuation.delimiter
-"->" @punctuation.delimeter
-"|" @operator
-"=" @operator
-"+" @operator
-"-" @operator
-"#;
-
-    format!("{}{}", tree_sitter_rust::HIGHLIGHT_QUERY, QUERY_ADDITION)
 }

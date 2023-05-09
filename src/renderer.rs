@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant, clone};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroU64, ops::Deref, time::Instant};
 use core::fmt::Debug;
 
 use image::ImageBuffer;

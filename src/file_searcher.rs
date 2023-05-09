@@ -22,6 +22,6 @@ pub fn emplace_find_menu(world: &mut World, font: Font, ui_box_factory: &UiBoxFa
     Ok(view_entity)
 }
 
-pub fn file_searcher_on_event(world: &mut World, event: &Event) -> () {
+pub fn file_searcher_on_event(world: &mut World, event: &Event) {
 
 }

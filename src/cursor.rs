@@ -42,13 +42,13 @@ pub fn cursor_on_event(world: &mut World, event: &Event) {
                 };
 
                 let world_position;
-                if view.contains_point(position) {
-                    world_position = camera.view_to_world(position)
+                if let Some(view_position) = view.to_view(position) {
+                    world_position = camera.view_to_world(view_position)
                 } else {
                     continue
                 }
 
-                let buffer_entry = match world.entry_ref(cursor.buffer.clone()) {
+                let buffer_entry = match world.entry_ref(cursor.buffer) {
                     Ok(buffer) => buffer,
                     Err(_) => continue, //stranded cursor
                 };
