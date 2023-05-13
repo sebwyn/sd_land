@@ -29,6 +29,15 @@ pub struct Font {
 }
 
 impl Font {
+    pub fn smallest_ymin(&self, scale: f32) -> f32 {
+        self.smallest_ymin * scale
+    }
+
+    pub fn font_height(&self, scale: f32) -> f32 {
+        println!("{}", self.greatest_y);
+        (self.greatest_y - self.smallest_ymin) * scale
+    } 
+
     fn load_system_font(name: &str) -> Result<Vec<u8>, SimpleError> {
         // let fonts = system_fonts::query_all();
         let font_path = system_fonts::FontPropertyBuilder::new()
@@ -78,15 +87,15 @@ impl Font {
             .map(|(_, m, _)| m.bounds.ymin)
             .unwrap();
 
-            let greatest_y = char_data.iter()
-            .min_by(|(_, a, _), (_, b, _)| {
+        let greatest_y = char_data.iter()
+            .max_by(|(_, a, _), (_, b, _)| {
                 let a_y_max = a.bounds.ymin + a.bounds.height;
                 let b_y_max = b.bounds.ymin + b.bounds.height;
 
                 a_y_max.partial_cmp(&b_y_max)
                     .unwrap_or(Ordering::Equal) 
             })
-            .map(|(_, m, _)| m.bounds.ymin)
+            .map(|(_, m, _)| m.bounds.ymin + m.bounds.height)
             .unwrap();
 
         let font_image = image::GrayImage::from_fn(max_width * width, max_height, 
@@ -162,11 +171,10 @@ impl Font {
     pub fn get_str_pixel_width(&self, text: &str, scale: f32) -> f32 {
         let mut width = 0f32;
 
-        for character in text.chars() {
-            let (_, metrics) = self.characters.get(&character)
-                .ok_or(SimpleError::new("That character hasn't been loaded in this font!")).unwrap();
+        let mut chars = text.chars().peekable();
 
-            width += metrics.bounds.width * scale;
+        while let Some(char) = chars.next() {
+            width += self.get_char_pixel_width(char, chars.peek().cloned(), scale)            
         }
 
         width

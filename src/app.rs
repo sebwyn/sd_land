@@ -8,13 +8,16 @@ use winit::{
 };
 
 use crate::{
-    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::{Visible, Vertex}, shortcuts::trigger_shortcuts, text::prepare_font, cursor::{cursor_on_event, Cursor}
+    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::{Visible, Vertex}, shortcuts::trigger_shortcuts, text::prepare_font, ui_box::UiBoxFactory
 };
 
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
     let (text_material, font) = prepare_font(renderer, "Roboto Mono").unwrap();
+
+    let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
+    let cursor_material = ui_box_factory.material();
 
     let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
@@ -26,24 +29,31 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     let view_entity = world.push((view, camera, Visible));
 
     //create a buffer
-    let buffer = Buffer::load(
+    let mut buffer = Buffer::load(
         &file, 
-        50f32, 
+        40f32, 
         ColorScheme::default(), 
         font,
         0.6f32,
     ).unwrap();
 
-    let buffer_entity = world.push((buffer, text_material, ViewRef(view_entity), Vec::<Vertex>::new()));
+    let cursor = world.push((
+        Vec::<Vertex>::new(),
+        ViewRef(view_entity),
+        cursor_material
+    ));
+    buffer.insert_cursor(cursor);
 
-    let cursor = Cursor::new(buffer_entity, view_entity);
-
-    world.push((cursor,));
+    world.push((
+        buffer, 
+        text_material, 
+        ViewRef(view_entity), 
+        Vec::<Vertex>::new()
+    ));
 
     //create the shortcuts
     systems.register_event_systems(buffer_on_event);
     systems.register_event_systems(trigger_shortcuts);
-    systems.register_event_systems(cursor_on_event)
 }
 
 pub fn run() {

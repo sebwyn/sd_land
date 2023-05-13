@@ -4,12 +4,14 @@ use std::{fs::File, io::Read, path::Path};
 
 use std::str;
 
-use legion::{World, IntoQuery, EntityStore};
+use legion::{World, IntoQuery, EntityStore, Entity};
 use simple_error::SimpleError;
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent};
+use uuid::Uuid;
+use winit::event::MouseButton;
 
 use crate::camera::Camera;
-use crate::graphics::Vertex;
+use crate::graphics::{Vertex, RectangleBuilder};
 use crate::system::{Event, Key};
 use crate::text::Font;
 use crate::view::{ViewRef, View};
@@ -115,6 +117,12 @@ const RUST_HIGHLIGHT_NAMES: &[&str] = &[
     "punctuation"
 ];
 
+#[derive(Clone, Copy)]
+pub struct Cursor {
+    entity: Entity,
+    position: usize,
+}
+
 pub fn buffer_on_event(world: &mut World, event: &Event) { 
     match event {
         Event::PrepareRender => {
@@ -131,10 +139,12 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
 
                     camera.clone()
                 });
-            } 
+            }
 
             let mut buffer_query = <(&Buffer, &mut Vec<Vertex>, &ViewRef)>::query();
             
+            let mut cursors: Vec<(Cursor, Vec<Vertex>)> = Vec::new();
+
             for (buffer, vertices, view) in buffer_query.iter_mut(world) {
                 let camera = cameras.get(&view.0).expect("No camera found for view!");
                 
@@ -144,10 +154,33 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                 let new_vertices = buffer.render(view_top, view_bottom);
 
                 *vertices = new_vertices;
+
+                for cursor in &buffer.cursors {
+                    //generate a position and a rectangle for the cursor
+                    let (world_x, mut world_y) = buffer.world_position(cursor.position);
+                    world_y += buffer.font.smallest_ymin(buffer.font_scale);
+                    // let height = buffer.font.font_height(buffer.font_scale);
+
+
+                    let vertices = RectangleBuilder::default()
+                        .position(world_x, world_y)
+                        .size(3f32, buffer.line_height)
+                        .depth(0.4)
+                        .build();
+                    
+                    cursors.push((*cursor, vertices));
+                }
+            }
+
+            //draw the cursors
+            for (cursor, new_vertices) in cursors {
+                let mut cursor_entity = world.entry(cursor.entity).unwrap();
+                let vertices = cursor_entity.get_component_mut::<Vec<Vertex>>().unwrap();
+                *vertices = new_vertices;
             }
         },
         Event::KeyPress(key, modifiers) => {
-            if modifiers.logo() && !modifiers.shift() {
+            if modifiers.logo() && !modifiers.shift() && !modifiers.alt() {
                 match key {
                     Key::Char(s, ..) if *s == 's' => {
                         let mut query = <&Buffer>::query();
@@ -158,8 +191,81 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     _ => {}
                 }
             }
-        }
 
+            if !modifiers.logo() && !modifiers.alt() {
+                let character = match key {
+                    Key::Char(_, uppercase) if modifiers.shift() && uppercase.is_some() => Some(uppercase.unwrap()),
+                    Key::Char(lowercase, _) if !modifiers.shift() => Some(*lowercase),
+                    Key::Tab => Some('\t'),
+                    Key::Return => Some('\n'),
+                    _ => None
+                };
+                
+                if let Some(character) = character {
+                    for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
+    
+                        for position in positions {
+                            buffer.insert_at(character, position);
+                        }
+    
+                        for cursor in buffer.cursors.iter_mut() {
+                            cursor.position += 1;
+                        }
+                    }
+                } else {
+                    match key {
+                        Key::Backspace => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
+        
+                            for position in positions {
+                                buffer.remove_at(position);
+                            }
+        
+                            for cursor in buffer.cursors.iter_mut() {
+                                cursor.position -= 1;
+                            }
+                        },
+                        Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            for cursor in buffer.cursors.iter_mut() {
+                                cursor.position -= 1;
+                            }
+                        },
+                        Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            for cursor in buffer.cursors.iter_mut() {
+                                cursor.position += 1;
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        },
+        Event::MousePress(button, position, key_modifiers) if matches!(button, MouseButton::Left) => {
+            let mut buffers_and_positions = HashMap::new();
+
+            for (buffer, view_ref) in <(&Buffer, &ViewRef)>::query().iter(world) {
+                assert!(buffer.cursors.len() == 1);
+
+                let view_entity = world.entry_ref(view_ref.0).unwrap();
+
+                let view = view_entity.get_component::<View>().unwrap();
+                let camera = view_entity.get_component::<Camera>().unwrap();
+
+                if let Some(view_position) = view.to_view(position) {
+                    let world_position = camera.view_to_world(view_position);
+                    let (buffer_position, _) = buffer.buffer_position(world_position);
+
+                    buffers_and_positions.insert(buffer.id, buffer_position);
+                }
+            }
+
+            for (i, buffer) in <&mut Buffer>::query().iter_mut(world).enumerate() {
+                if let Some(buffer_position) = buffers_and_positions.get(&buffer.id) {
+                    buffer.cursors[0].position = *buffer_position;
+                } 
+            }
+        },
         Event::MouseScroll(scroll, position) => {
             let mut query = <(&Buffer, &ViewRef)>::query();
             
@@ -205,14 +311,18 @@ struct Highlight {
 }
 
 pub struct Buffer {
+    id: Uuid,
+
     file: String,
     source_code: String,
     
     line_height: f32,
-    colorscheme: ColorScheme,
-
     font_scale: f32,
     font: Font,
+
+    cursors: Vec<Cursor>,
+
+    colorscheme: ColorScheme,
 
     highlight_enabled: bool,
     rust_highlight_configuration: HighlightConfiguration,
@@ -223,6 +333,75 @@ pub struct Buffer {
 
 
 impl Buffer {
+    pub fn insert_cursor(&mut self, entity: Entity) {
+        self.cursors.push(
+            Cursor {
+                entity,
+                position: 0,
+            }
+        );
+    }
+
+    pub fn load(file_name: &str, line_height: f32, colorscheme: ColorScheme, font: Font, font_scale: f32) -> Result<Self, SimpleError> {
+        let file_path = Path::new(file_name);
+        if !file_path.exists() {
+            return Err(SimpleError::new("File does not exist!"));
+        }
+
+        if !file_path.is_file() {
+            return Err(SimpleError::new("Attempting to load a directory!"));
+        }
+
+        let mut source_code = String::new();
+        let mut file = File::open(file_path)
+            .map_err(|e| SimpleError::new(format!("Failed to load the file: {}", e.to_string())))?;
+        file.read_to_string(&mut source_code).map_err(|_| SimpleError::new("Failed to read file!"))?;
+
+        //generate initial highlights if available
+        let mut highlight_enabled = false;
+        if let Some(extension) = file_path.extension() {
+            if extension.to_str().unwrap() == "rs" {
+                highlight_enabled = true
+            }
+        };
+
+        let mut rust_highlight_configuration = HighlightConfiguration::new(
+                tree_sitter_rust::language(),
+                tree_sitter_rust::HIGHLIGHT_QUERY,
+                "",
+                "",
+        ).unwrap();
+        rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
+
+        let highlighter = Highlighter::new();
+
+        let id = Uuid::new_v4();
+
+        let mut buffer = Self {
+            id,
+            file: file_name.to_string(),
+            source_code,
+
+            line_height,
+            font_scale,
+            font,
+
+            cursors: Vec::new(),
+
+            colorscheme,
+
+            highlight_enabled,
+            rust_highlight_configuration,
+            highlighter,
+
+            highlights: Vec::new()
+        };
+
+        if buffer.highlight_enabled { buffer.update_highlights() }
+
+        Ok(buffer)
+    }
+
     pub fn save(&self) {
         let mut file = File::create(&self.file)
             .expect("Could not find file to save to");
@@ -387,64 +566,32 @@ impl Buffer {
         }
 
         let position = (line_character_offset + column, (row, column));
-        println!("{:?}", position);
         position
     }
 
-    pub fn load(file_name: &str, line_height: f32, colorscheme: ColorScheme, font: Font, font_scale: f32) -> Result<Self, SimpleError> {
-        let file_path = Path::new(file_name);
-        if !file_path.exists() {
-            return Err(SimpleError::new("File does not exist!"));
-        }
+    pub fn world_position(&self, position: usize) -> (f32, f32) {
+        let line_lengths = self.source_code.lines().map(|l| l.len() + 1);
 
-        if !file_path.is_file() {
-            return Err(SimpleError::new("Attempting to load a directory!"));
-        }
-
-        let mut source_code = String::new();
-        let mut file = File::open(file_path)
-            .map_err(|e| SimpleError::new(format!("Failed to load the file: {}", e.to_string())))?;
-        file.read_to_string(&mut source_code).map_err(|_| SimpleError::new("Failed to read file!"))?;
-
-        //generate initial highlights if available
-        let mut highlight_enabled = false;
-        if let Some(extension) = file_path.extension() {
-            if extension.to_str().unwrap() == "rs" {
-                highlight_enabled = true
+        let mut lines_before = 0;
+        let mut characters_before = 0;
+        for line_length in line_lengths {
+            let new_length = characters_before + line_length;
+            if new_length > position {
+                break;
+            } else {
+                characters_before = new_length;
+                lines_before += 1;
             }
-        };
+        }
 
-        let mut rust_highlight_configuration = HighlightConfiguration::new(
-                tree_sitter_rust::language(),
-                tree_sitter_rust::HIGHLIGHT_QUERY,
-                "",
-                "",
-        ).unwrap();
-        rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
+        let text_before = self.source_code.get(characters_before..position).unwrap();  
 
-        let highlighter = Highlighter::new();
+        let column = position - characters_before;
 
-        let mut buffer = Self {
-            file: file_name.to_string(),
-            source_code,
+        let width = self.font.get_str_pixel_width(text_before, self.font_scale);
 
-            line_height,
-            colorscheme,
-
-            font_scale,
-            font,
-
-            highlight_enabled,
-            rust_highlight_configuration,
-            highlighter,
-
-            highlights: Vec::new()
-        };
-
-        if buffer.highlight_enabled { buffer.update_highlights() }
-
-        Ok(buffer)
-    }
+        (width, -1.0 * self.line_height * lines_before as f32)
+    }   
 }
 
 fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [f32; 3] {

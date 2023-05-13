@@ -79,7 +79,7 @@ pub enum Event {
     MouseScroll(PhysicalPosition<f64>, PhysicalPosition<f64>),
     KeyPress(Key, ModifiersState),
     KeyRelease(Key, ModifiersState),
-    MousePress(MouseButton, PhysicalPosition<f64>),
+    MousePress(MouseButton, PhysicalPosition<f64>, ModifiersState),
     PrepareRender,
 }
 
@@ -176,7 +176,7 @@ impl Systems {
                     button, 
                     .. 
                 } => {
-                    let event = Event::MousePress(*button, self.mouse_position);
+                    let event = Event::MousePress(*button, self.mouse_position, self.key_modifiers);
                     self.notify_event_systems(world, event);
                 }
                 winit::event::WindowEvent::ModifiersChanged(modifiers) => {

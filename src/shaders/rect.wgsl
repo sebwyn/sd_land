@@ -45,7 +45,7 @@ var<private> distance_colors: array<vec4<f32>, 4> = array<vec4<f32>, 4>(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    var distance = in.distance;
+    /*var distance = in.distance;
 
     let color = vec3<f32>(
         step(0.2,
@@ -53,7 +53,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         smoothstep(1.0, 0.95, distance.r) *
         smoothstep(1.0, 0.95, distance.g) *
         smoothstep(1.0, 0.95, distance.a))
-    );
+    );*/
     
-    return vec4<f32>(in.color.xyz * color, 1.0);
+    return vec4<f32>(in.color.xyz /** color*/, 1.0);
 }
