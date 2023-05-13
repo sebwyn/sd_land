@@ -1,4 +1,4 @@
-use crate::shader_types::MaterialValue;
+use super::shader_types::MaterialValue;
 
 pub struct Material {
     uniforms: Vec<(String, (u32, u32), MaterialValue)>,

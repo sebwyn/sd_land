@@ -1,7 +1,11 @@
 use regex::Regex;
 use simple_error::SimpleError;
 
-use crate::{pipeline::Pipeline, renderer::{Renderer, MaterialHandle}, graphics::{RectangleBuilder, Vertex}};
+use crate::renderer::{
+    pipeline::Pipeline, 
+    renderer::{Renderer, MaterialHandle}, 
+    primitive::{RectangleBuilder, Vertex}
+};
 
 pub struct UiBoxFactory {
     material_handle: MaterialHandle

@@ -4,7 +4,12 @@ use fontdue::Metrics;
 use image::Luma;
 use simple_error::SimpleError;
 
-use crate::{renderer::{MaterialHandle, Renderer}, pipeline::Pipeline, graphics::{Vertex, RectangleBuilder}, shader_types::{Texture, Sampler}};
+use crate::renderer::{
+    renderer::{MaterialHandle, Renderer}, 
+    pipeline::Pipeline, 
+    primitive::{Vertex, RectangleBuilder}, 
+    shader_types::{Texture, Sampler}
+};
 
 use font_loader::system_fonts;
 

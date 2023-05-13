@@ -1,3 +1,0 @@
-(char_literal) @string
-(string_literal) @string
-(raw_string_literal) @string

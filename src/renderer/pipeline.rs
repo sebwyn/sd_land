@@ -4,7 +4,7 @@ use naga::{ResourceBinding, Module, Handle, GlobalVariable, Expression};
 use simple_error::SimpleError;
 use wgpu::VertexBufferLayout;
 
-use crate::{shader_types::{create_binding_type, create_uniform_storage}, material::Material};
+use super::{shader_types::{create_binding_type, create_uniform_storage}, material::Material};
 
 #[derive(Clone, Debug)]
 pub struct Uniform {

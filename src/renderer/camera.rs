@@ -1,7 +1,7 @@
 use cgmath::{Point3, Vector3};
 use winit::dpi::PhysicalPosition;
 
-use crate::graphics::Vertex;
+use super::primitive::Vertex;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(

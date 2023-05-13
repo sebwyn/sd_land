@@ -7,9 +7,11 @@ use winit::{
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
-use crate::{
-    renderer::Renderer, camera::Camera, view::{View, ViewRef}, buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, graphics::{Visible, Vertex}, shortcuts::trigger_shortcuts, text::prepare_font, ui_box::UiBoxFactory
+use crate::renderer::{
+    renderer::Renderer, camera::Camera, view::{View, ViewRef}, primitive::{Visible, Vertex}
 };
+
+use crate::{buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
 
 pub struct EnttRef(pub Entity);
 
@@ -53,7 +55,6 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
 
     //create the shortcuts
     systems.register_event_systems(buffer_on_event);
-    systems.register_event_systems(trigger_shortcuts);
 }
 
 pub fn run() {

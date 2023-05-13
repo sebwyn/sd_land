@@ -15,7 +15,7 @@ impl Vertex {
     pub fn position(&self) -> &[f32; 3] { &self.position }
 }
 
-impl crate::pipeline::Vertex for Vertex {
+impl super::pipeline::Vertex for Vertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
 

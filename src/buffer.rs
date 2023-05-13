@@ -10,11 +10,11 @@ use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent}
 use uuid::Uuid;
 use winit::event::MouseButton;
 
-use crate::camera::Camera;
-use crate::graphics::{Vertex, RectangleBuilder};
+use crate::renderer::camera::Camera;
+use crate::renderer::primitive::{Vertex, RectangleBuilder};
 use crate::system::{Event, Key};
 use crate::text::Font;
-use crate::view::{ViewRef, View};
+use crate::renderer::view::{ViewRef, View};
 use crate::ui_box::hex_color;
 
 pub struct ColorScheme {
@@ -241,7 +241,7 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                 }
             }
         },
-        Event::MousePress(button, position, key_modifiers) if matches!(button, MouseButton::Left) => {
+        Event::MousePress(button, position, _) if matches!(button, MouseButton::Left) => {
             let mut buffers_and_positions = HashMap::new();
 
             for (buffer, view_ref) in <(&Buffer, &ViewRef)>::query().iter(world) {
@@ -260,7 +260,7 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                 }
             }
 
-            for (i, buffer) in <&mut Buffer>::query().iter_mut(world).enumerate() {
+            for buffer in <&mut Buffer>::query().iter_mut(world) {
                 if let Some(buffer_position) = buffers_and_positions.get(&buffer.id) {
                     buffer.cursors[0].position = *buffer_position;
                 } 
@@ -565,8 +565,7 @@ impl Buffer {
             column += 1;
         }
 
-        let position = (line_character_offset + column, (row, column));
-        position
+        (line_character_offset + column, (row, column))
     }
 
     pub fn world_position(&self, position: usize) -> (f32, f32) {
@@ -585,8 +584,6 @@ impl Buffer {
         }
 
         let text_before = self.source_code.get(characters_before..position).unwrap();  
-
-        let column = position - characters_before;
 
         let width = self.font.get_str_pixel_width(text_before, self.font_scale);
 
