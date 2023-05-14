@@ -55,7 +55,7 @@ impl Graphics {
                 r: c[0] as f64,
                 g: c[1] as f64,
                 b: c[2] as f64,
-                a: 1.0,
+                a: 1.0f64,
             })
         }).unwrap_or(wgpu::LoadOp::Load);
 

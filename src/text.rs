@@ -44,7 +44,6 @@ impl Font {
     }
 
     pub fn font_height(&self, scale: f32) -> f32 {
-        println!("{}", self.greatest_y);
         (self.greatest_y - self.smallest_ymin) * scale
     } 
 
@@ -75,7 +74,7 @@ impl Font {
         let mut char_data = Vec::new();
         for c in 32u8..127 {
             let c = c as char;
-            let (metrics, bitmap) = font.rasterize(c, 50f32);
+            let (metrics, bitmap) = font.rasterize(c, 70f32);
             char_data.push((c, metrics, bitmap));
         }
 

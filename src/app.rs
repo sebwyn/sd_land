@@ -25,7 +25,10 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
 
-    let buffer_view = BufferView::new(400, 2000, 0, 3200).font_scale(0.6).font("Roboto Mono");
+    let buffer_view = BufferView::new(0, 2800, 0, 3200)
+        .font("Roboto Mono")
+        .line_height(40f32)
+        .font_scale(0.4);
 
     let mut buffer = Buffer::load(&file).unwrap();
 
@@ -87,8 +90,6 @@ pub fn run() {
                 _ => {}
             },
             Event::RedrawRequested(_) => {
-                systems.prepare_render(&mut world);
-
                 match renderer.render(&world) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => renderer.find_display(),

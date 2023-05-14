@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use legion::{World, IntoQuery};
 use winit::dpi::PhysicalPosition;
 
-use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight, HighlightedRange}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
+use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
 
 
 
@@ -56,49 +56,59 @@ impl BufferView {
         self.font_scale = font_scale; self
     }
 
-    pub fn buffer_position(&self, buffer: &Buffer, world_position: (f32, f32)) -> (usize, usize) {
-        let lines = buffer.lines();
-        
-        //calculate what line we're on
-        let mut row = if world_position.1 < 0.0 {
-            (-world_position.1 / self.line_height) as usize + 1
-        } else {
-            0usize
-        };
+    pub fn line_height(mut self, line_height: f32) -> Self {
+        self.line_height = line_height; self
+    }
 
-        let last_line = lines.len() - 1;
-        if row > last_line {
-            row = last_line;
-            let last_line_text = lines.last().map(|s| s.as_str()).unwrap_or("");
-            let col = last_line_text.len();
+    pub fn buffer_position(&self, buffer: &Buffer, screen_position: &PhysicalPosition<f64>) -> Option<(usize, usize)> {
+        if let Some(view_position) = self.view.to_view(screen_position) {
+            let world_position = self.camera.view_to_world(view_position);
+            
+            let lines = buffer.lines();
 
-            return (row, col)
-        }
-
-        let line = lines.get(row).unwrap();
-
-        let mut column = 0usize;
-        let mut width = 0f32;
-        let mut chars = line.chars().peekable();
-        
-        while let Some(char) = chars.next() {
-            let new_width = width + self.font.get_char_pixel_width(char, chars.peek().copied(), self.font_scale); 
-            if new_width > world_position.0 {
-                if (new_width - world_position.0).abs() > (width - world_position.0).abs() {
-                    break;
-                } else {
-                    column += 1;
-                    break;
-                }
+            //calculate what line we're on
+            let mut row = if world_position.1 < 0.0 {
+                (-world_position.1 / self.line_height) as usize + 1
             } else {
-                width = new_width;
-            }
-                
-            if width > world_position.0 { break }
-            column += 1;
-        }
+                0usize
+            };
 
-        (row, column)
+            let last_line = lines.len() - 1;
+            if row > last_line {
+                row = last_line;
+                let last_line_text = lines.last().map(|s| s.as_str()).unwrap_or("");
+                let col = last_line_text.len();
+
+                return Some((row, col))
+            }
+
+            let line = lines.get(row).unwrap();
+
+            let mut column = 0usize;
+            let mut width = 0f32;
+            let mut chars = line.chars().peekable();
+            
+            while let Some(char) = chars.next() {
+                let new_width = width + self.font.get_char_pixel_width(char, chars.peek().copied(), self.font_scale); 
+                if new_width > world_position.0 {
+                    if (new_width - world_position.0).abs() > (width - world_position.0).abs() {
+                        break;
+                    } else {
+                        column += 1;
+                        break;
+                    }
+                } else {
+                    width = new_width;
+                }
+                    
+                if width > world_position.0 { break }
+                column += 1;
+            }
+
+            Some((row, column))
+        } else {
+            None
+        }
     }
 
     pub fn world_position(&self, buffer: &Buffer, (row, col): (usize, usize)) -> (f32, f32) {
@@ -157,29 +167,43 @@ impl<'a> BufferPass<'a> {
     #[inline] fn end_y(&self) -> f32 { self.buffer_view.camera.view_bottom() }
 
     pub fn render_highlight_ranges(&self) -> Vec<Vertex> {
-        self.buffer.highlighted_ranges.iter().filter_map(|&HighlightedRange { start, mut end, .. }| {
-            //selection is on one line
-            if end.0 != start.0 {
-                end = (start.0, self.lines()[start.0].len())
-            }
+        let padding_width = self.font().get_char_pixel_width(' ', None, self.font_scale());
 
-            if start.0 == end.0 {
-                //calculate the starting position from that
-                let start_position = self.world_position(start);
-                let end_position = self.world_position(end);
+        self.buffer.highlighted_ranges.iter().flat_map(|range| {
+            let (start, end) = range.start_end();
+
+            let mut vertices = Vec::new();
+
+            for (line_num, line) in (start.0..end.0+1).zip(self.lines().get(start.0..end.0+1).unwrap().iter()) {
+                let y = -1f32 * line_num as f32 * self.line_height();
                 
-                let width = end_position.0 - start_position.1;
+                let start_x = 
+                    if line_num == start.0 {
+                        self.world_position(start).0
+                    } else {
+                        0f32
+                    };
 
-                Some(RectangleBuilder::default()
-                    .position(start_position.0, start_position.1)
+                let end_x = 
+                    if line_num == end.0 {
+                        self.world_position(end).0
+                    } else {
+                        self.font().get_str_pixel_width(line, self.font_scale()) + padding_width
+                    };
+
+                let width = end_x - start_x;
+
+                vertices.extend(RectangleBuilder::default()
+                    .position(start_x, y)
                     .size(width, self.line_height())
                     .depth(0.4)
-                    .color(hex_color("#0000FF").unwrap())
-                    .build())
-            } else {
-                None
+                    .color(hex_color("#9ACCEA").unwrap())
+                    .opacity(0.05)
+                    .build());
             }
-        }).flatten().collect()
+
+            vertices
+        }).collect()
 
     }
 

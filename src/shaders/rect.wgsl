@@ -1,7 +1,7 @@
 // Vertex shader
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) color: vec4<f32>,
     @location(2) tex_coords: vec2<f32>,
 };
 
@@ -32,7 +32,7 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) in_vertex_index: u32) -> Vert
     out.distance = vec4<f32>(r, g, b, a);
 
     out.clip_position = view_proj * vec4<f32>(in.position, 1.0);
-    out.color = vec4<f32>(in.color, 1.0);
+    out.color = in.color;
 
     return out;
 }
@@ -55,5 +55,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         smoothstep(1.0, 0.95, distance.a))
     );*/
     
-    return vec4<f32>(in.color.xyz /** color*/, 1.0);
+    return in.color;
 }

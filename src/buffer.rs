@@ -18,8 +18,28 @@ pub struct Highlight {
 }
 
 pub struct HighlightedRange {
-    pub(super) start: (usize, usize),
-    pub(super) end: (usize, usize),
+    pub(super) p1: (usize, usize),
+    pub(super) p2: (usize, usize),
+}
+
+impl HighlightedRange {
+    pub fn new(p1: (usize, usize), p2: (usize, usize)) -> Self {
+        Self {
+            p1,
+            p2
+        }
+    }
+    pub fn start_end(&self) -> ((usize, usize), (usize, usize)) {
+        if self.p1.0 > self.p2.0 {
+            (self.p2, self.p1)
+        } else if self.p2.0 > self.p1.0 {
+            (self.p1, self.p2)
+        } else if self.p1.1 > self.p2.1 {
+            (self.p2, self.p1)
+        } else {
+            (self.p1, self.p2)
+        }
+    }
 }
 
 pub struct Buffer {
@@ -49,11 +69,11 @@ impl Buffer {
         );
     }
 
-    pub fn insert_highlighted_range(&mut self, start: (usize, usize), end: (usize, usize)) {
+    pub fn insert_highlighted_range(&mut self, p1: (usize, usize), p2: (usize, usize)) {
         self.highlighted_ranges.push(
             HighlightedRange {
-                start, 
-                end 
+                p1, 
+                p2 
             }
         );
     }

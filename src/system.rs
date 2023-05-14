@@ -1,5 +1,36 @@
+use std::collections::HashMap;
+
 use legion::World;
 use winit::{dpi::{PhysicalSize, PhysicalPosition}, event::{ModifiersState, MouseButton}};
+
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct MouseState: u32 {
+        const LEFT = 0b00000001;
+        const RIGHT = 0b00000010;
+        const MIDDLE = 0b00000100;
+    }
+}
+
+impl From<&MouseButton> for MouseState {
+    fn from(value: &MouseButton) -> Self {
+        match value {
+            MouseButton::Left => MouseState::LEFT,
+            MouseButton::Right => MouseState::RIGHT,
+            MouseButton::Middle => MouseState::MIDDLE,
+            MouseButton::Other(_) => MouseState::empty(),
+        }
+    }
+}
+
+impl Default for MouseState {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 
 #[derive(Default)]
 pub struct Systems {
@@ -7,6 +38,17 @@ pub struct Systems {
 
     key_modifiers: ModifiersState,
     mouse_position: PhysicalPosition<f64>,
+    mouse_state: MouseState,
+
+    drags: HashMap<MouseButton, MouseDrag>
+}
+
+#[derive(Debug, Clone)]
+pub struct MouseDrag {
+    pub start: PhysicalPosition<f64>,
+    pub current_position: PhysicalPosition<f64>,
+    pub button: MouseButton,
+    pub finish: Option<PhysicalPosition<f64>>,
 }
 
 #[derive(Debug)]
@@ -74,7 +116,11 @@ pub enum Event {
     KeyPress(Key, ModifiersState),
     KeyRelease(Key, ModifiersState),
     MousePress(MouseButton, PhysicalPosition<f64>, ModifiersState),
-    PrepareRender,
+    MouseMoved(MouseState, PhysicalPosition<f64>, ModifiersState),
+    MouseRelease(MouseButton, PhysicalPosition<f64>, ModifiersState),
+    //start, current position, end
+    MouseDrag(MouseDrag),
+    MouseClick(MouseButton, PhysicalPosition<f64>, ModifiersState),
 }
 
 impl Systems {
@@ -92,10 +138,6 @@ impl Systems {
         for event_system in self.event_systems.iter() {
             event_system(world, &event);
         }
-    }
-
-    pub fn prepare_render(&mut self, world: &mut World) {
-        self.notify_event_systems(world, Event::PrepareRender);
     }
 
     pub fn update<T>(&mut self, world: &mut World, event: &winit::event::Event<T>) {
@@ -169,19 +211,69 @@ impl Systems {
                     button, 
                     .. 
                 } => {
+                    self.mouse_state |= MouseState::from(button);
+
+                    self.drags.insert(*button, 
+                        MouseDrag { 
+                            start: self.mouse_position, 
+                            current_position: self.mouse_position, 
+                            button: *button, 
+                            finish: None 
+                        });
+
                     let event = Event::MousePress(*button, self.mouse_position, self.key_modifiers);
                     self.notify_event_systems(world, event);
                 }
-                winit::event::WindowEvent::ModifiersChanged(modifiers) => {
-                    self.key_modifiers = *modifiers;
+                winit::event::WindowEvent::MouseInput { 
+                    state: winit::event::ElementState::Released, 
+                    button, .. 
+                } => {
+                    self.mouse_state &= MouseState::from(button).complement();
+
+                    let mut drag = self.drags.remove(button).unwrap();
+
+                    if same_position(drag.start, self.mouse_position) {
+                        let click_event = Event::MouseClick(*button, self.mouse_position, self.key_modifiers);
+                        self.notify_event_systems(world, click_event);
+                    } else {
+                        drag.current_position = self.mouse_position;
+                        drag.finish = Some(self.mouse_position);
+                        let drag_event = Event::MouseDrag(drag);
+                        self.notify_event_systems(world, drag_event);
+                    }
+
+                    let event = Event::MouseRelease(*button, self.mouse_position, self.key_modifiers);
+                    self.notify_event_systems(world, event);
                 },
                 winit::event::WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_position = *position;
+
+                    for (_, drag) in self.drags.iter() {
+                        let mut drag = drag.clone();
+
+                        if !same_position(drag.current_position, self.mouse_position) {
+                            drag.current_position = self.mouse_position;
+
+                            let event = Event::MouseDrag(drag);
+                            self.notify_event_systems(world, event);
+                        }
+                    }
+
+                    let event = Event::MouseMoved(self.mouse_state, self.mouse_position, self.key_modifiers);
+                    self.notify_event_systems(world, event);
                 },
+                winit::event::WindowEvent::ModifiersChanged(modifiers) => {
+                    self.key_modifiers = *modifiers;
+                },   
                 _ => {}
             }
         }
     }
+}
+
+fn same_position(a: PhysicalPosition<f64>, b: PhysicalPosition<f64>) -> bool {
+    a.x - 2.5 < b.x && b.x < a.x + 2.5 &&
+    a.y - 2.5 < b.y && b.y < a.y + 2.5
 }
 
 #[derive(Debug, Clone, Copy)]
