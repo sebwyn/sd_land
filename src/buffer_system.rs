@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use legion::{Entity, World, EntityStore, IntoQuery};
 use winit::event::MouseButton;
 
-use crate::{system::{Event, Key}, renderer::{view::{ViewRef, View}, camera::Camera, primitive::{Vertex, RectangleBuilder}}, buffer::Buffer};
+use crate::{system::{Event, Key}, renderer::{view::{ViewRef, View}, camera::Camera, primitive::{Vertex, RectangleBuilder}}, buffer::{Buffer, HighlightedRange}};
 
 #[derive(Clone, Copy)]
 pub struct Cursor {
@@ -31,7 +31,7 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
 
             let mut buffer_query = <(&Buffer, &mut Vec<Vertex>, &ViewRef)>::query();
             
-            let mut cursors: Vec<(Cursor, Vec<Vertex>)> = Vec::new();
+            let mut renderable_children: Vec<(Entity, Vec<Vertex>)> = Vec::new();
 
             for (buffer, vertices, view) in buffer_query.iter_mut(world) {
                 let camera = cameras.get(&view.0).expect("No camera found for view!");
@@ -43,31 +43,33 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
 
                 *vertices = new_vertices;
 
-                for cursor in &buffer.cursors {
-                    //generate a position and a rectangle for the cursor
-                    let (world_x, mut world_y) = buffer.world_position(cursor.position);
-                    world_y += buffer.font.smallest_ymin(buffer.font_scale);
-                    // let height = buffer.font.font_height(buffer.font_scale);
+                for &Cursor { position, entity } in &buffer.cursors {
+                    let (world_x, world_y) = buffer.world_position(position);
 
                     let vertices = RectangleBuilder::default()
                         .position(world_x, world_y)
                         .size(3f32, buffer.line_height)
-                        .depth(0.4)
+                        .depth(0.6)
                         .build();
                     
-                    cursors.push((*cursor, vertices));
+                    renderable_children.push((entity, vertices));
+                }
+
+                for &HighlightedRange { entity, start, end } in &buffer.highlighted_ranges {
+                    let vertices = buffer.highlight_range(start, end);
+                    renderable_children.push((entity, vertices));
                 }
             }
 
-            //draw the cursors
-            for (cursor, new_vertices) in cursors {
-                let mut cursor_entity = world.entry(cursor.entity).unwrap();
+            //draw the cursors and ranges
+            for (entity, new_vertices) in renderable_children {
+                let mut cursor_entity = world.entry(entity).unwrap();
                 let vertices = cursor_entity.get_component_mut::<Vec<Vertex>>().unwrap();
                 *vertices = new_vertices;
             }
         },
         Event::KeyPress(key, modifiers) => {
-            if modifiers.logo() && !modifiers.shift() && !modifiers.alt() {
+            if modifiers.logo() && !modifiers.shift() && !modifiers.alt() && !modifiers.ctrl() {
                 match key {
                     Key::Char(s, ..) if *s == 's' => {
                         let mut query = <&Buffer>::query();
@@ -87,8 +89,22 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     }
                     _ => {}
                 }
-            }
-            if !modifiers.logo() && !modifiers.alt() {
+            } else if modifiers.alt() && !modifiers.ctrl() && !modifiers.logo()  {
+                match key {
+                    Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        for i in 0..buffer.cursors.len() {
+                            buffer.cursors[i].position = buffer.move_forward_word(buffer.cursors[i].position);
+                        }
+                    },
+                    Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        for i in 0..buffer.cursors.len() {
+                            buffer.cursors[i].position = buffer.move_backward_word(buffer.cursors[i].position);
+                        }
+                    },
+                    _ => {}
+                }
+            } 
+            else if !modifiers.logo() && !modifiers.alt() {
                 let character = match key {
                     Key::Char(_, uppercase) if modifiers.shift() && uppercase.is_some() => Some(uppercase.unwrap()),
                     Key::Char(lowercase, _) if !modifiers.shift() => Some(*lowercase),

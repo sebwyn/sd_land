@@ -3,16 +3,18 @@ use std::{fs::File, io::Read, path::Path};
 
 use std::str;
 
+use cgmath::Zero;
 use legion::Entity;
+use regex::Regex;
 use simple_error::SimpleError;
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent};
 use uuid::Uuid;
 
 
 use crate::buffer_system::Cursor;
-use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type};
+use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type, hex_color};
 
-use crate::renderer::primitive::Vertex;
+use crate::renderer::primitive::{Vertex, RectangleBuilder};
 use crate::text::Font;
 
 #[derive(Debug)]
@@ -20,6 +22,12 @@ struct Highlight {
     code_type: Option<usize>,
     start_byte: usize,
     end_byte: usize,
+}
+
+pub struct HighlightedRange {
+    pub(super) entity: Entity,
+    pub(super) start: (usize, usize),
+    pub(super) end: (usize, usize),
 }
 
 pub struct Buffer {
@@ -33,6 +41,7 @@ pub struct Buffer {
     pub(super) font: Font,
 
     pub(super) cursors: Vec<Cursor>,
+    pub(super) highlighted_ranges: Vec<HighlightedRange>,
 
     colorscheme: ColorScheme,
 
@@ -49,6 +58,16 @@ impl Buffer {
             Cursor {
                 entity,
                 position: (0, 0),
+            }
+        );
+    }
+
+    pub fn insert_highlighted_range(&mut self, entity: Entity, start: (usize, usize), end: (usize, usize)) {
+        self.highlighted_ranges.push(
+            HighlightedRange { 
+                entity, 
+                start, 
+                end 
             }
         );
     }
@@ -104,6 +123,7 @@ impl Buffer {
             font,
 
             cursors: Vec::new(),
+            highlighted_ranges: Vec::new(),
 
             colorscheme,
 
@@ -282,6 +302,54 @@ impl Buffer {
         }
     }
 
+    pub fn move_forward_word(&self, (row, col): (usize, usize)) -> (usize, usize) {
+        let line_bounday_regex = Regex::new(r"(\b|$)").unwrap();
+
+        let line_text = &self.lines[row];
+        
+        if let Some(m) = line_bounday_regex.find_iter(line_text).find(|m| m.start() > col) {
+            return (row, m.start());
+        }
+        if let Some(next_line) = self.lines.get(row + 1) {
+            if !next_line.len().is_zero() {
+                let next_line_match = line_bounday_regex
+                    .find(next_line)
+                    .map(|m| m.start())
+                    .unwrap_or(0);
+                (row + 1, next_line_match)
+            } else {
+                (row + 1, 0)
+            }
+            
+        } else {
+            (row, col)
+        } 
+    }
+
+    pub fn move_backward_word(&self, (row, col): (usize, usize)) -> (usize, usize) {
+        let line_bounday_regex = Regex::new(r"(\b|$|^)").unwrap();
+
+        let line_text = &self.lines[row];
+        
+        let mut matches = line_bounday_regex.find_iter(line_text).peekable();
+        
+        //if the first match is greater than the c
+        if col == 0 {
+            if row > 0 {
+                return (row - 1, self.lines[row - 1].len())
+            } else {
+                return (row, col)
+            }
+        }
+
+        while let Some(m) = matches.next() {
+            if matches.peek().map(|m| m.start() >= col).unwrap_or(false) {
+                return (row, m.start());
+            }
+        }
+
+        (row, col)
+    }
 
     pub fn render(&self, start_y: f32, end_y: f32) -> Vec<Vertex> {
         let start_line = if start_y > 0f32 { 0usize } else { (-start_y / self.line_height) as usize };
@@ -356,6 +424,30 @@ impl Buffer {
         }
 
         vertices
+    }
+
+    pub fn highlight_range(&self, start: (usize, usize), mut end: (usize, usize)) -> Vec<Vertex> {
+        //selection is on one line
+        if end.0 != start.0 {
+            end = (start.0, self.lines[start.0].len())
+        }
+
+        if start.0 == end.0 {
+            //calculate the starting position from that
+            let start_position = self.world_position(start);
+            let end_position = self.world_position(end);
+            
+            let width = end_position.0 - start_position.1;
+
+            RectangleBuilder::default()
+                .position(start_position.0, start_position.1)
+                .size(width, self.line_height)
+                .depth(0.4)
+                .color(hex_color("#0000FF").unwrap())
+                .build()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn buffer_position(&self, world_position: (f32, f32)) -> (usize, usize) {

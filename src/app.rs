@@ -46,6 +46,13 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     ));
     buffer.insert_cursor(cursor);
 
+    let highlighted_range = world.push((
+        Vec::<Vertex>::new(),
+        ViewRef(view_entity),
+        cursor_material
+    ));
+    buffer.insert_highlighted_range(highlighted_range, (0, 0), (0, 10));
+
     world.push((
         buffer, 
         text_material, 
