@@ -1,22 +1,62 @@
-use std::{collections::HashMap, time::Instant, ops::Deref};
+use std::{collections::HashMap, ops::Deref};
 use core::fmt::Debug;
 
 use image::ImageBuffer;
-use legion::{World, Entity, IntoQuery, EntityStore};
+use legion::{World};
 use simple_error::SimpleError;
 use uuid::Uuid;
-use winit::window::Window;
+use winit::{window::Window, dpi::PhysicalSize};
 
 use super::{
     pipeline::Pipeline, 
     graphics::Graphics, 
-    graphics::{LoadedPipeline, RenderWork}, 
-    primitive::{Vertex, Visible, Rectangle}, 
-    view::{ViewRef, View}, 
-    camera::Camera, 
-    shader_types::{Matrix, MaterialValue}, 
+    graphics::{LoadedPipeline, GraphicsWork}, 
+    primitive::Vertex, 
+    view::View,
+    shader_types::MaterialValue, 
     material::Material
 };
+
+pub struct Renderer {
+    api: RenderApi,
+    subrenderers: Vec<Box<dyn Subrenderer>>,
+}
+
+impl Renderer {
+    pub fn new(window: &Window) -> Self {
+        Self {
+            api: RenderApi::new(window),
+            subrenderers: Vec::new()
+        }
+    }
+
+    pub fn push_subrenderer<T: Subrenderer + 'static>(&mut self, mut subrenderer: T) {
+        subrenderer.init(&mut self.api);
+        self.subrenderers.push(Box::new(subrenderer))
+    }
+
+    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
+        for renderer in &mut self.subrenderers {
+            renderer.render(world, &mut self.api)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.api.resize(new_size)
+    }
+
+    pub fn find_display(&mut self) {
+        self.api.find_display();
+    }
+}
+
+pub trait Subrenderer {
+    fn init(&mut self, renderer: &mut RenderApi);
+    fn render(&mut self, world: &World, renderer: &mut RenderApi) -> Result<(), wgpu::SurfaceError>;
+}
+
 
 pub struct MaterialInfo {
     pipeline: PipelineHandle,
@@ -25,22 +65,27 @@ pub struct MaterialInfo {
     dirty: bool
 }
 
-pub struct Renderer {
+pub struct RenderApi {
     textures: HashMap<Uuid, wgpu::Texture>,
     samplers: HashMap<Uuid, wgpu::Sampler>,
     pipelines: HashMap<Uuid, (Pipeline, LoadedPipeline)>,
     materials: HashMap<Uuid, MaterialInfo>,
 
-    graphics: Graphics
+    graphics: Graphics,
 }
 
+pub struct RenderWork {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+    pub material: MaterialHandle
+}
 
 pub type TextureHandle = Uuid;
 pub type SamplerHandle = Uuid;
 pub type PipelineHandle = Uuid;
 pub type MaterialHandle = Uuid;
 
-impl Renderer {
+impl RenderApi {
     pub fn new(window: &Window) -> Self {
         let graphics = pollster::block_on(Graphics::new(window));
 
@@ -49,97 +94,55 @@ impl Renderer {
             samplers: HashMap::new(),
             pipelines: HashMap::new(),
             materials: HashMap::new(),
-            graphics
+            graphics,
         }
     }
 
-    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
-        let _ = Instant::now();
-        
-        let mut viewed_elements = <(&Vec<Vertex>, &MaterialHandle, &ViewRef)>::query();
+    pub fn submit_work(&mut self, work: &[RenderWork], clear_color: Option<[f32; 3]>, view: Option<&View>) 
+     -> Result<(), wgpu::SurfaceError> 
+    {
+        self.graphics.begin_render(clear_color)?;
 
-        //sort the elements by which view their in
-        let mut elements_by_view: HashMap<Entity, HashMap<MaterialHandle, Vec<&Vec<Vertex>>>> = HashMap::new();
-        for (vertices, material, view) in viewed_elements.iter(world) {
-            let view = elements_by_view.entry(view.0)
-                .or_insert(HashMap::new());
-            
-            let material_vec = view.entry(*material)
-                .or_insert(Vec::new());
+        for RenderWork { vertices, indices, material } in work {
+            let vertex_buffer = self.graphics.create_vertex_buffer(vertices);
+            let index_buffer = self.graphics.create_index_buffer(indices);
+            let num_indices = indices.len() as u32;
 
-            material_vec.push(vertices);
-        }
+            {
+                let material_info = match self.materials.get(material) {
+                    Some(info) => info,
+                    None => continue,
+                };
 
-        self.graphics.begin_render([0f32, 0f32, 0f32])?;
-        for (view, rects_by_material) in elements_by_view {
-            //set the view
-            let view_entity = world.entry_ref(view).expect("View entity does not exist!");
-            let view = view_entity.get_component::<View>().expect("View entity doesn't have a view!");
-            let camera = view_entity.get_component::<Camera>().expect("View entity doesn't have a camera!");
-            
-            let is_visible = view_entity.get_component::<Visible>().ok().is_some();
-            if !is_visible {
-                continue;
-            }
-
-            let view_proj_matrix = Matrix::from(camera.matrix());
-
-            //update all the materials to have a camera
-            for (material, _) in rects_by_material.iter() {
-                //try and update the view_proj matrix, may fail, but that is fine
-                self.update_material(*material, "view_proj", view_proj_matrix.clone());
-                
-                let material_info = self.materials.get_mut(material).unwrap();
-                
                 if material_info.dirty || material_info.bind_groups.is_none() {
-                    let updated_bind_groups = self.create_bind_groups(material).unwrap();
-    
+                    let new_bind_groups = Some(self.create_bind_groups(material).unwrap());
+                    
                     let material_info = self.materials.get_mut(material).unwrap();
-                    material_info.bind_groups = Some(updated_bind_groups);
+                    material_info.bind_groups = new_bind_groups;
                     material_info.dirty = false;
                 }
             }
 
-            let mut render_tasks = Vec::new();
-            for (material, vertex_sets) in rects_by_material.iter() {
+            let material_info = self.materials.get(material).unwrap();
 
-                let material_info = match self.materials.get(material) {
-                    Some(material) => material,
-                    None => continue,
-                };
+            let pipeline = match self.pipelines.get(&material_info.pipeline) {
+                Some(pipeline) => &pipeline.1.pipeline,
+                None => continue
+            };
 
-                let vertices: Vec<Vertex> = 
-                    vertex_sets.iter().flat_map(|v| (*v).clone()).collect::<Vec<_>>();
-                    
-                let num_rectangles = vertices.len() / 4;
-                let indices = (0..num_rectangles)
-                    .flat_map(|i| 
-                        Rectangle::INDICES.iter()
-                        .map(move |e| *e + (i * 4) as u32))
-                    .collect::<Vec<_>>();
-
-                let vertex_buffer = self.graphics.create_vertex_buffer(&vertices);
-                let index_buffer = self.graphics.create_index_buffer(&indices);
-                let num_indices = indices.len() as u32;
-
-                let pipeline = &self.pipelines.get(&material_info.pipeline).as_ref().unwrap().1.pipeline;
-
-                render_tasks.push(RenderWork {
-                    pipeline, 
-                    bind_groups: material_info.bind_groups.as_ref().unwrap(), 
-                    vertex_buffer, 
-                    index_buffer, 
-                    num_indices,
-                    view: Some(view),
-                });
-            }
-
-            self.graphics.render(render_tasks)?;
+            self.graphics.render(vec![GraphicsWork {
+                pipeline,
+                bind_groups: material_info.bind_groups.as_ref().unwrap(),
+                vertex_buffer,
+                index_buffer,
+                num_indices,
+                view,
+            }])?;
         }
+        
         self.graphics.flush();
 
         Ok(())
-
     }
 
     pub fn find_display(&mut self) {

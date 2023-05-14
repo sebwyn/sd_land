@@ -1,11 +1,11 @@
 use std::{io::Read, fs::File, collections::HashMap, cmp::Ordering};
 
 use fontdue::Metrics;
-use image::Luma;
+use image::{Luma, ImageBuffer};
 use simple_error::SimpleError;
 
 use crate::renderer::{
-    renderer::{MaterialHandle, Renderer}, 
+    render_api::{MaterialHandle, RenderApi}, 
     pipeline::Pipeline, 
     primitive::{Vertex, RectangleBuilder}, 
     shader_types::{Texture, Sampler}
@@ -25,15 +25,20 @@ pub struct Bounds {
 
 #[derive(Clone)]
 pub struct Font {
+    font_name: String,
+
     characters: HashMap<char, (TexCoords, Metrics)>,
-    texture: Texture,
     font: fontdue::Font,
+    
     smallest_ymin: f32,
     greatest_y: f32,
 
+    font_image: ImageBuffer<Luma<u8>, Vec<u8>>,
 }
 
 impl Font {
+    pub fn name(&self) -> &str { &self.font_name }
+
     pub fn smallest_ymin(&self, scale: f32) -> f32 {
         self.smallest_ymin * scale
     }
@@ -60,7 +65,7 @@ impl Font {
         Ok(font_bytes)
     }
 
-    pub fn load(renderer: &mut Renderer, system_font: &str) -> Result<Self, SimpleError> {
+    pub fn load(system_font: &str) -> Result<Self, SimpleError> {
         let font_bytes = Self::load_system_font(system_font)?;
 
         let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default()).unwrap();
@@ -125,8 +130,6 @@ impl Font {
 
         font_image.save("font.jpg").unwrap();
 
-        let texture = Texture::new(renderer.create_texture(font_image).unwrap());
-        
         let mut characters = HashMap::new();
         for (i, (c, metrics, _)) in char_data.into_iter().enumerate() {
             let tex_coords = Self::tex_coords(
@@ -140,11 +143,13 @@ impl Font {
         }
 
         Ok(Self {
+            font_name: system_font.to_string(),
+
             characters,
-            texture,
             font,
             smallest_ymin,
-            greatest_y
+            greatest_y,
+            font_image,
         })
     }
 
@@ -261,21 +266,18 @@ impl Font {
 
 }
 
-pub fn prepare_font(renderer: &mut Renderer, font: &str) -> Result<(MaterialHandle, Font), SimpleError> {
-    let font = Font::load(renderer, font)?;
+pub fn create_font_material(renderer: &mut RenderApi, font: &Font) -> Result<MaterialHandle, SimpleError> {
+    let texture = Texture::new(renderer.create_texture(font.font_image.clone()).unwrap());
 
     let text_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/text_shader.wgsl"))?;
     let pipeline_handle = renderer.create_pipeline(text_pipeline);
 
     let material_handle = renderer.create_material(pipeline_handle)?;
-    renderer.update_material(material_handle, "t_diffuse", font.texture.clone());
+    renderer.update_material(material_handle, "t_diffuse", texture);
 
     let sampler = Sampler::new(renderer.create_sampler());
     renderer.update_material(material_handle, "s_diffuse", sampler);
 
-    Ok((
-        material_handle,
-        font
-    ))
+    Ok(material_handle)
 }
 

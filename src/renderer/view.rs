@@ -1,7 +1,5 @@
-use legion::{Entity, IntoQuery, World};
+use legion::Entity;
 use winit::dpi::PhysicalPosition;
-
-use crate::system::Event;
 
 pub struct View {
     left: u32,
@@ -62,15 +60,4 @@ impl View {
         }
     }
     
-}
-
-
-pub fn view_on_event(world: &mut World, event: &Event) {
-    if let &Event::Resize(new_size) = event {
-        let mut query = <&mut View>::query();
-
-        for view in query.iter_mut(world) {
-            // view.
-        }
-    }
 }

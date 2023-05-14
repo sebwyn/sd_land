@@ -18,7 +18,7 @@ pub struct LoadedPipeline {
     pub(super) bind_group_layouts: Vec<(u32, BindGroupLayout)>,
 }
 
-pub struct RenderWork<'a> {
+pub struct GraphicsWork<'a> {
     pub(super) pipeline: &'a RenderPipeline,
     pub(super) bind_groups: &'a [BindGroup], 
     pub(super) vertex_buffer: Buffer, 
@@ -42,13 +42,22 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub(super) fn begin_render(&mut self, clear_color: [f32; 3]) -> Result<(), SurfaceError>{
+    pub(super) fn begin_render(&mut self, clear_color: Option<[f32; 3]>) -> Result<(), SurfaceError>{
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
+
+        let load = clear_color.map(|c| {
+            wgpu::LoadOp::Clear(wgpu::Color {
+                r: c[0] as f64,
+                g: c[1] as f64,
+                b: c[2] as f64,
+                a: 1.0,
+            })
+        }).unwrap_or(wgpu::LoadOp::Load);
 
         {
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -57,12 +66,7 @@ impl Graphics {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color[0] as f64,
-                            g: clear_color[1] as f64,
-                            b: clear_color[2] as f64,
-                            a: 1.0,
-                        }),
+                        load,
                         store: true,
                     },
                 })],
@@ -84,7 +88,7 @@ impl Graphics {
     }
 
     pub(super) fn render(&mut self, 
-        work: Vec<RenderWork>,
+        work: Vec<GraphicsWork>,
     )  -> Result<(), wgpu::SurfaceError> {
         
         let view = self.current_surface_texture.as_ref()

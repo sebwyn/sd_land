@@ -2,7 +2,7 @@ use simple_error::SimpleError;
 
 use crate::{renderer::{
     pipeline::Pipeline, 
-    renderer::{Renderer, MaterialHandle}, 
+    render_api::{RenderApi, MaterialHandle}, 
     primitive::{RectangleBuilder, Vertex}
 }, colorscheme::hex_color};
 
@@ -11,7 +11,7 @@ pub struct UiBoxFactory {
 }
 
 impl UiBoxFactory {
-    pub fn new(renderer: &mut Renderer) -> Result<Self, SimpleError> {
+    pub fn new(renderer: &mut RenderApi) -> Result<Self, SimpleError> {
         let pipeline = Pipeline::load::<Vertex>(include_str!("shaders/rect.wgsl"))?;
         // renderer
         let pipeline_handle = renderer.create_pipeline(pipeline);

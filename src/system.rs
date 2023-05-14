@@ -1,5 +1,3 @@
-use std::{any::{TypeId, Any}, collections::HashMap};
-
 use legion::World;
 use winit::{dpi::{PhysicalSize, PhysicalPosition}, event::{ModifiersState, MouseButton}};
 
@@ -9,8 +7,6 @@ pub struct Systems {
 
     key_modifiers: ModifiersState,
     mouse_position: PhysicalPosition<f64>,
-
-    resources: HashMap<TypeId, Box<dyn Any>>,
 }
 
 #[derive(Debug)]

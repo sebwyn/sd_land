@@ -3,76 +3,62 @@ use std::{fs::File, io::Read, path::Path};
 
 use std::str;
 
-use cgmath::Zero;
-use legion::Entity;
 use regex::Regex;
 use simple_error::SimpleError;
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent};
-use uuid::Uuid;
-
 
 use crate::buffer_system::Cursor;
-use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type, hex_color};
-
-use crate::renderer::primitive::{Vertex, RectangleBuilder};
-use crate::text::Font;
+use crate::colorscheme::RUST_HIGHLIGHT_NAMES;
 
 #[derive(Debug)]
-struct Highlight {
-    code_type: Option<usize>,
-    start_byte: usize,
-    end_byte: usize,
+pub struct Highlight {
+    pub(super) code_type: Option<usize>,
+    pub(super) start_byte: usize,
+    pub(super) end_byte: usize,
 }
 
 pub struct HighlightedRange {
-    pub(super) entity: Entity,
     pub(super) start: (usize, usize),
     pub(super) end: (usize, usize),
 }
 
 pub struct Buffer {
-    pub(super) id: Uuid,
     file: String,
 
     lines: Vec<String>,
-    
-    pub(super) line_height: f32,
-    pub(super) font_scale: f32,
-    pub(super) font: Font,
 
     pub(super) cursors: Vec<Cursor>,
     pub(super) highlighted_ranges: Vec<HighlightedRange>,
 
-    colorscheme: ColorScheme,
 
-    highlight_enabled: bool,
     rust_highlight_configuration: HighlightConfiguration,
     highlighter: Highlighter,
 
-    highlights: Vec<Highlight>,
+    pub(super) highlight_enabled: bool,
+    pub(super) highlights: Vec<Highlight>,
 }
 
 impl Buffer {
-    pub fn insert_cursor(&mut self, entity: Entity) {
+    pub fn lines(&self) -> &[String] {
+        &self.lines
+    }
+
+    pub fn insert_cursor(&mut self) {
         self.cursors.push(
-            Cursor {
-                entity,
-                position: (0, 0),
-            }
+            Cursor(0, 0)
         );
     }
 
-    pub fn insert_highlighted_range(&mut self, entity: Entity, start: (usize, usize), end: (usize, usize)) {
+    pub fn insert_highlighted_range(&mut self, start: (usize, usize), end: (usize, usize)) {
         self.highlighted_ranges.push(
-            HighlightedRange { 
-                entity, 
+            HighlightedRange {
                 start, 
                 end 
             }
         );
     }
 
-    pub fn load(file_name: &str, line_height: f32, colorscheme: ColorScheme, font: Font, font_scale: f32) -> Result<Self, SimpleError> {
+    pub fn load(file_name: &str) -> Result<Self, SimpleError> {
         let file_path = Path::new(file_name);
         if !file_path.exists() {
             return Err(SimpleError::new("File does not exist!"));
@@ -97,8 +83,6 @@ impl Buffer {
             }
         };
 
-        // println!("{}", tree_sitter_rust::HIGHLIGHT_QUERY);
-
         let mut rust_highlight_configuration = HighlightConfiguration::new(
                 tree_sitter_rust::language(),
                 tree_sitter_rust::HIGHLIGHT_QUERY,
@@ -110,22 +94,13 @@ impl Buffer {
 
         let highlighter = Highlighter::new();
 
-        let id = Uuid::new_v4();
-
         let mut buffer = Self {
-            id,
             file: file_name.to_string(),
 
             lines,
 
-            line_height,
-            font_scale,
-            font,
-
             cursors: Vec::new(),
             highlighted_ranges: Vec::new(),
-
-            colorscheme,
 
             highlight_enabled,
             rust_highlight_configuration,
@@ -149,7 +124,10 @@ impl Buffer {
         file.write_all(source_code_buffer.as_bytes()).expect("Failed to write to file!");
     }
 
-    pub fn remove_at(&mut self, (row, mut col): (usize, usize)) {
+    pub fn remove_at(&mut self, cursor: Cursor) {
+        let row = cursor.0;
+        let mut col = cursor.1;
+
         assert!(row < self.lines.len());
 
         //clamp the position to the lines columns
@@ -168,7 +146,10 @@ impl Buffer {
         if self.highlight_enabled { self.update_highlights(); }
     }   
 
-    pub fn insert_at(&mut self, character: char, (row, mut col): (usize, usize)) {
+    pub fn insert_at(&mut self, character: char, cursor: Cursor) {
+        let row = cursor.0;
+        let mut col = cursor.1;
+
         col = col.clamp(0, self.lines[row].len());
         
         if let Some(line) = self.lines.get_mut(row) {
@@ -178,7 +159,10 @@ impl Buffer {
         if self.highlight_enabled { self.update_highlights(); }
     }
 
-    pub fn insert_str_at(&mut self, str: &str, (row, mut col): (usize, usize)) -> (usize, usize) {
+    pub fn insert_str_at(&mut self, str: &str, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let mut col = cursor.1;
+
         col = col.clamp(0, self.lines[row].len());
         
         
@@ -197,7 +181,7 @@ impl Buffer {
 
             if lines.peek().is_some() {
                 current_row += 1;
-                self.insert_line((current_row, 0))
+                self.insert_line(Cursor(current_row, 0))
             }
         }
         let end_column = self.lines[current_row].len();
@@ -205,10 +189,13 @@ impl Buffer {
 
         if self.highlight_enabled { self.update_highlights(); }
 
-        (current_row, end_column)
+        Cursor(current_row, end_column)
     }
 
-    pub fn insert_line(&mut self, (row, mut col): (usize, usize)) {
+    pub fn insert_line(&mut self, cursor: Cursor) {
+        let row = cursor.0;
+        let mut col = cursor.1;
+
         col = col.clamp(0, self.lines[row].len());
         
         let (prev_line, new_line) = {
@@ -258,75 +245,92 @@ impl Buffer {
         }
     }
 
+    pub fn move_right(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let col = cursor.1;
 
-    pub fn move_right(&self, (row, col): (usize, usize)) -> (usize, usize) {
         let current_line = self.lines.get(row).unwrap();
 
         if col < current_line.len() {
-            (row, col + 1)
+            Cursor(row, col + 1)
         } else if row < self.lines.len() - 1 {
-            (row + 1, 0)
+            Cursor(row + 1, 0)
         } else {
-            (row, col)
+            Cursor(row, col)
         }
     }
 
-    pub fn move_left(&self, (row, mut col): (usize, usize)) -> (usize, usize) {
+    pub fn move_left(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let mut col = cursor.1;
+
         let current_line = self.lines.get(row).unwrap();
 
         col = col.clamp(0, current_line.len());
 
         if col > 0 {
-            (row, col - 1)
+            Cursor(row, col - 1)
         } else if row > 0 {
             let previous_row = &self.lines[row - 1];
-            (row - 1, previous_row.len())
+            Cursor(row - 1, previous_row.len())
         } else {
-            (row, col)
+            Cursor(row, col)
         }
     }
 
-    pub fn move_up(&self, (row, col): (usize, usize)) -> (usize, usize) {
+    pub fn move_up(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let col = cursor.1;
+
         if row > 0 {
-            (row - 1, col)
+            Cursor(row - 1, col)
         } else {
-            (row, col)
+            Cursor(row, col)
         }
     }
 
-    pub fn move_down(&self, (row, col): (usize, usize)) -> (usize, usize) {
+    pub fn move_down(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let col = cursor.1;
+
         if row < self.lines.len() - 1 {
-            (row + 1, col)
+            Cursor(row + 1, col)
         } else {
-            (row, col)
+            Cursor(row, col)
         }
     }
 
-    pub fn move_forward_word(&self, (row, col): (usize, usize)) -> (usize, usize) {
+    pub fn move_forward_word(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let col = cursor.1;
+
         let line_bounday_regex = Regex::new(r"(\b|$)").unwrap();
 
         let line_text = &self.lines[row];
         
         if let Some(m) = line_bounday_regex.find_iter(line_text).find(|m| m.start() > col) {
-            return (row, m.start());
+            return Cursor(row, m.start());
         }
         if let Some(next_line) = self.lines.get(row + 1) {
-            if !next_line.len().is_zero() {
+            if next_line.is_empty() {
                 let next_line_match = line_bounday_regex
                     .find(next_line)
                     .map(|m| m.start())
                     .unwrap_or(0);
-                (row + 1, next_line_match)
+                Cursor(row + 1, next_line_match)
             } else {
-                (row + 1, 0)
+                Cursor(row + 1, 0)
             }
             
         } else {
-            (row, col)
+            Cursor(row, col)
         } 
     }
 
-    pub fn move_backward_word(&self, (row, col): (usize, usize)) -> (usize, usize) {
+    pub fn move_backward_word(&self, cursor: Cursor) -> Cursor {
+        let row = cursor.0;
+        let col = cursor.1;
+
         let line_bounday_regex = Regex::new(r"(\b|$|^)").unwrap();
 
         let line_text = &self.lines[row];
@@ -336,174 +340,18 @@ impl Buffer {
         //if the first match is greater than the c
         if col == 0 {
             if row > 0 {
-                return (row - 1, self.lines[row - 1].len())
+                return Cursor(row - 1, self.lines[row - 1].len())
             } else {
-                return (row, col)
+                return Cursor(row, col)
             }
         }
 
         while let Some(m) = matches.next() {
             if matches.peek().map(|m| m.start() >= col).unwrap_or(false) {
-                return (row, m.start());
+                return Cursor(row, m.start());
             }
         }
 
-        (row, col)
+        Cursor(row, col)
     }
-
-    pub fn render(&self, start_y: f32, end_y: f32) -> Vec<Vertex> {
-        let start_line = if start_y > 0f32 { 0usize } else { (-start_y / self.line_height) as usize };
-        let end_line = if end_y > 0f32 { 0usize } else { (-end_y / self.line_height) as usize };
-        
-        let num_lines = end_line - start_line;
-
-        let source_code_buffer = self.lines.join("\n");
-        let start_byte: usize = source_code_buffer.lines().take(start_line).map(|l| l.len() + 1).sum();
-
-        let mut vertices = Vec::new();
-
-        let mut highlights = self.highlights.iter()
-            .skip_while(|h| h.start_byte < start_byte)
-            .peekable();
-
-        let mut current_highlight_color = self.colorscheme.text_color;
-
-        let mut line = 0usize;
-        let mut offset_x = 0f32;
-        let mut offset_y = -1.0 * start_line as f32 * self.line_height;
-        for byte in start_byte.. {
-            if line > num_lines {
-                break
-            }
-
-            if self.highlight_enabled  {
-                if let Some(highlight) = highlights.peek() {
-                    if highlight.end_byte <= byte {
-                        highlights.next();
-                        current_highlight_color = self.colorscheme.text_color;
-                    }
-                }
-
-                if let Some(highlight) = highlights.peek() {
-                    if highlight.start_byte <= byte {
-                        let code_type = highlight.code_type
-                            .map(|index| RUST_HIGHLIGHT_NAMES[index])
-                            .unwrap_or("text_color");
-
-                        current_highlight_color = 
-                            get_highlight_for_code_type(code_type, &self.colorscheme);
-                    }
-                }
-            }
-
-            let current_char = source_code_buffer.as_bytes().get(byte).copied();
-            if current_char.is_none() { break }
-            let current_char = current_char.unwrap() as char;
-
-            if current_char == '\n' {
-                offset_y -= self.line_height;
-                line += 1;
-                offset_x = 0.0;
-                continue;
-            }
-
-            //otherwise print the character nicely
-            let next_character = source_code_buffer.as_bytes().get(byte + 1).map(|c| *c as char);
-
-            let (right, rectangle) = self.font.layout_character(
-                current_char, 
-                next_character, 
-                (offset_x, offset_y), 
-                self.font_scale, 
-                0.5
-            ).unwrap();
-
-            vertices.extend(rectangle.color(current_highlight_color).build());
-
-            offset_x = right;
-        }
-
-        vertices
-    }
-
-    pub fn highlight_range(&self, start: (usize, usize), mut end: (usize, usize)) -> Vec<Vertex> {
-        //selection is on one line
-        if end.0 != start.0 {
-            end = (start.0, self.lines[start.0].len())
-        }
-
-        if start.0 == end.0 {
-            //calculate the starting position from that
-            let start_position = self.world_position(start);
-            let end_position = self.world_position(end);
-            
-            let width = end_position.0 - start_position.1;
-
-            RectangleBuilder::default()
-                .position(start_position.0, start_position.1)
-                .size(width, self.line_height)
-                .depth(0.4)
-                .color(hex_color("#0000FF").unwrap())
-                .build()
-        } else {
-            Vec::new()
-        }
-    }
-
-    pub fn buffer_position(&self, world_position: (f32, f32)) -> (usize, usize) {
-        //calculate what line we're on
-        let mut row = if world_position.1 < 0.0 {
-            (-world_position.1 / self.line_height) as usize + 1
-        } else {
-            0usize
-        };
-
-        let last_line = self.lines.len() - 1;
-        if row > last_line {
-            row = last_line;
-            let last_line_text = self.lines.last().map(|s| s.as_str()).unwrap_or("");
-            let col = last_line_text.len();
-
-            return (row, col)
-        }
-
-        let line = self.lines.get(row).unwrap();
-
-        let mut column = 0usize;
-        let mut width = 0f32;
-        let mut chars = line.chars().peekable();
-        
-        while let Some(char) = chars.next() {
-            let new_width = width + self.font.get_char_pixel_width(char, chars.peek().copied(), self.font_scale); 
-            if new_width > world_position.0 {
-                if (new_width - world_position.0).abs() > (width - world_position.0).abs() {
-                    break;
-                } else {
-                    column += 1;
-                    break;
-                }
-            } else {
-                width = new_width;
-            }
-                
-            if width > world_position.0 { break }
-            column += 1;
-        }
-
-        (row, column)
-    }
-
-    pub fn world_position(&self, (row, col): (usize, usize)) -> (f32, f32) {
-        let y_pos = -1.0 * row as f32 * self.line_height;
-
-        let current_line = self.lines.get(row).map(|s| s.as_str()).unwrap_or("");
-        
-        let actual_column = col.clamp(0, current_line.len());
-
-        let preceding_text = current_line.get(0..actual_column).unwrap();
-        let x_pos = self.font.get_str_pixel_width(preceding_text, self.font_scale);
-
-        (x_pos, y_pos)
-    }   
-
 }

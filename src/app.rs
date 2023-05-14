@@ -7,59 +7,37 @@ use winit::{
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
-use crate::{renderer::{
-    renderer::Renderer, camera::Camera, view::{View, ViewRef}, primitive::{Visible, Vertex}
-}, buffer_system::buffer_on_event};
+use crate::{
+    renderer::render_api::Renderer, 
+    buffer_system::buffer_on_event, 
+    buffer_renderer::{BufferRenderer, BufferView}, 
+    colorscheme::hex_color
+};
 
-use crate::{colorscheme::ColorScheme, buffer::Buffer, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
+use crate::{buffer::Buffer, system::Systems};
 
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
-    let (text_material, font) = prepare_font(renderer, "Roboto Mono").unwrap();
-
-    let ui_box_factory = UiBoxFactory::new(renderer).unwrap();
-    let cursor_material = ui_box_factory.material();
+    let buffer_renderer = BufferRenderer::default()
+        .background(hex_color("#000000").unwrap());
 
     let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
 
-    //create the camera
-    let camera = Camera::new(2400, 2400);
-    //create a view
-    let view = View::new(400, 2800, 2400, 0, -100.0, 100.0);
-    let view_entity = world.push((view, camera, Visible));
+    let buffer_view = BufferView::new(400, 2000, 0, 3200).font_scale(0.6).font("Roboto Mono");
 
-    //create a buffer
-    let mut buffer = Buffer::load(
-        &file, 
-        40f32, 
-        ColorScheme::default(), 
-        font,
-        0.6f32,
-    ).unwrap();
+    let mut buffer = Buffer::load(&file).unwrap();
 
-    let cursor = world.push((
-        Vec::<Vertex>::new(),
-        ViewRef(view_entity),
-        cursor_material
-    ));
-    buffer.insert_cursor(cursor);
-
-    let highlighted_range = world.push((
-        Vec::<Vertex>::new(),
-        ViewRef(view_entity),
-        cursor_material
-    ));
-    buffer.insert_highlighted_range(highlighted_range, (0, 0), (0, 10));
+    buffer.insert_cursor();
+    buffer.insert_highlighted_range((0, 0), (0, 10));
 
     world.push((
-        buffer, 
-        text_material, 
-        ViewRef(view_entity), 
-        Vec::<Vertex>::new()
+        buffer,
+        buffer_view
     ));
 
+    renderer.push_subrenderer(buffer_renderer);
     //create the shortcuts
     systems.register_event_systems(buffer_on_event);
 }
@@ -70,6 +48,8 @@ pub fn run() {
     let window = WindowBuilder::new()
         .with_inner_size(PhysicalSize::<u32> { width: 3200, height: 2400 })
         .build(&event_loop).unwrap();
+
+
 
     let mut renderer = Renderer::new(&window);
     let mut world = World::default();
