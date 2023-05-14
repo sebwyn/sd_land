@@ -75,7 +75,7 @@ impl Renderer {
 
             let view_proj_matrix = Matrix::from(camera.matrix());
 
-            //udpate all the materials to have a camera
+            //update all the materials to have a camera
             for (material, _) in rects_by_material.iter() {
                 //try and update the view_proj matrix, may fail, but that is fine
                 self.update_material(*material, "view_proj", view_proj_matrix.clone());

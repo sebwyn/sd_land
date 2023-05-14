@@ -7,7 +7,7 @@ Editing:
 
  **Selection
   - selection along any movement
-  
+
   - selection mode -> cursor mode: good support
     . right arrow, will put the cursor at the end of selection
     . opposite for left arrow
@@ -19,7 +19,7 @@ Editing:
 **Indention
 
 **Parenthesis 
- 
+
 **Find
   - find in file
   - find in project
@@ -32,7 +32,6 @@ Editing:
 **Language support
   - show errors
   - autocomplete
-  - 
 
 **Autocomplete
   - snippets

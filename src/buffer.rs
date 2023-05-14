@@ -10,7 +10,7 @@ use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent}
 use uuid::Uuid;
 use winit::event::MouseButton;
 
-use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES};
+use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type};
 use crate::renderer::camera::Camera;
 use crate::renderer::primitive::{Vertex, RectangleBuilder};
 use crate::system::{Event, Key};
@@ -87,6 +87,16 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                         for buffer in query.iter(world) {
                             buffer.save();
                         }
+                    },
+                    Key::Char(s, ..) if *s == 'p' => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
+                        
+                        for (i, position) in positions.iter().enumerate() {
+                            let new_position = buffer
+                                .insert_str_at("\nprintln!(\"Hello, World!\")\n", *position);
+                            
+                            buffer.cursors[i].position = new_position;
+                        }
                     }
                     _ => {}
                 }
@@ -95,7 +105,6 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                 let character = match key {
                     Key::Char(_, uppercase) if modifiers.shift() && uppercase.is_some() => Some(uppercase.unwrap()),
                     Key::Char(lowercase, _) if !modifiers.shift() => Some(*lowercase),
-                    Key::Tab => Some('\t'),
                     _ => None
                 };
                 if let Some(character) = character {
@@ -115,25 +124,28 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                         Key::Backspace => for buffer in <&mut Buffer>::query().iter_mut(world) {
                             let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
                             
-                            for i in 0..buffer.cursors.len() {
-                                buffer.cursors[i].position = buffer.move_left(buffer.cursors[i].position)
-                            }
-
-                            for position in positions {
-                                buffer.remove_at(position);
+                            for (i, position) in positions.iter().enumerate() {
+                                buffer.cursors[i].position = buffer.move_left(buffer.cursors[i].position);
+                                buffer.remove_at(*position);
                             }
                         },
                         Key::Return => for buffer in <&mut Buffer>::query().iter_mut(world) {
                             let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
         
-                            for position in positions {
-                                buffer.insert_line(position);
-                            }
-        
-                            for i in 0..buffer.cursors.len() {
+                            for (i, position) in positions.iter().enumerate() {
+                                buffer.insert_line(*position);
                                 buffer.cursors[i].position.0 += 1;
                                 buffer.cursors[i].position.1 = 0;
                             }
+                        },
+                        Key::Tab => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
+                            
+                            for (i, position) in positions.iter().enumerate() {
+                                let new_position = buffer.insert_str_at("    ", *position);
+                                buffer.cursors[i].position = new_position;
+                            }
+
                         }
                         Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
                             for i in 0..buffer.cursors.len() {
@@ -286,6 +298,8 @@ impl Buffer {
             }
         };
 
+        // println!("{}", tree_sitter_rust::HIGHLIGHT_QUERY);
+
         let mut rust_highlight_configuration = HighlightConfiguration::new(
                 tree_sitter_rust::language(),
                 tree_sitter_rust::HIGHLIGHT_QUERY,
@@ -335,8 +349,11 @@ impl Buffer {
         file.write_all(source_code_buffer.as_bytes()).expect("Failed to write to file!");
     }
 
-    pub fn remove_at(&mut self, (row, col): (usize, usize)) {
+    pub fn remove_at(&mut self, (row, mut col): (usize, usize)) {
         assert!(row < self.lines.len());
+
+        //clamp the position to the lines columns
+        col = col.clamp(0, self.lines[row].len());
 
         if col == 0 && row > 0 {
             //this line needs to removed
@@ -349,11 +366,11 @@ impl Buffer {
         }
 
         if self.highlight_enabled { self.update_highlights(); }
-
-    
     }   
 
-    pub fn insert_at(&mut self, character: char, (row, col): (usize, usize)) {
+    pub fn insert_at(&mut self, character: char, (row, mut col): (usize, usize)) {
+        col = col.clamp(0, self.lines[row].len());
+        
         if let Some(line) = self.lines.get_mut(row) {
             line.insert(col, character);
         }
@@ -361,7 +378,39 @@ impl Buffer {
         if self.highlight_enabled { self.update_highlights(); }
     }
 
-    pub fn insert_line(&mut self, (row, col): (usize, usize)) {
+    pub fn insert_str_at(&mut self, str: &str, (row, mut col): (usize, usize)) -> (usize, usize) {
+        col = col.clamp(0, self.lines[row].len());
+        
+        
+        let (preceding_text, following_text) = self.lines[row].split_at(col);
+        let preceding_text = preceding_text.to_string();
+        let following_text = following_text.to_string();
+
+        let mut current_row = row;
+
+        let mut lines = str.split('\n').peekable();
+
+        self.lines[current_row] = preceding_text;
+        while let Some(line) = lines.next() {
+            let current_line = &mut self.lines[current_row];
+            *current_line += line;
+
+            if lines.peek().is_some() {
+                current_row += 1;
+                self.insert_line((current_row, 0))
+            }
+        }
+        let end_column = self.lines[current_row].len();
+        self.lines[current_row] += &following_text;
+
+        if self.highlight_enabled { self.update_highlights(); }
+
+        (current_row, end_column)
+    }
+
+    pub fn insert_line(&mut self, (row, mut col): (usize, usize)) {
+        col = col.clamp(0, self.lines[row].len());
+        
         let (prev_line, new_line) = {
             let current_line = &self.lines[row];
             let (prev_line, new_line) = current_line.split_at(col);
@@ -372,6 +421,7 @@ impl Buffer {
         self.lines[row] = new_line;
         self.lines.insert(row, prev_line);
 
+        if self.highlight_enabled { self.update_highlights(); }
     }
 
     pub fn update_highlights(&mut self) {
@@ -580,25 +630,5 @@ impl Buffer {
         } else {
             (row, col)
         }
-    }
-}
-
-fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [f32; 3] {
-    match code_type {
-
-        "function" | "function.method" | "function.macro" => color_scheme.function_color,
-        "type" | "type.builtin" | "constructor" => color_scheme.type_color,
-        "keyword" | "escape" => color_scheme.keyword_color,
-        
-        "constant.builtin" => color_scheme.primitive_color,
-        "property" => color_scheme.property_color,
-        "operator" => color_scheme.operator_color,
-        "comment" => color_scheme.comment_color,
-        "string" => color_scheme.string_color,
-
-        a if a.contains("punctuation") 
-            => color_scheme.punctuation_color,
-
-        _ => color_scheme.text_color,
     }
 }

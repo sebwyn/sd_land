@@ -110,6 +110,28 @@ impl ColorSchemeBuilder {
 
 }
 
+pub fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [f32; 3] {
+    match code_type {
+
+        "function" | "function.method" | "function.macro" => color_scheme.function_color,
+        "type" | "type.builtin" | "constructor" => color_scheme.type_color,
+        "keyword" | "escape" => color_scheme.keyword_color,
+        
+        "constant.builtin" => color_scheme.primitive_color,
+        "property" => color_scheme.property_color,
+        "operator" => color_scheme.operator_color,
+        "comment" => color_scheme.comment_color,
+        "string" => color_scheme.string_color,
+
+        "variable.builtin" => color_scheme.keyword_color,
+
+        a if a.contains("punctuation") 
+            => color_scheme.punctuation_color,
+
+        _ => color_scheme.text_color,
+    }
+}
+
 pub const RUST_HIGHLIGHT_NAMES: &[&str] = &[
     "function",
     "function.method",
@@ -124,5 +146,6 @@ pub const RUST_HIGHLIGHT_NAMES: &[&str] = &[
     "operator",
     "comment",
     "string",
-    "punctuation"
+    "punctuation",
+    "variable.builtin"
 ];
