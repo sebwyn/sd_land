@@ -1,11 +1,7 @@
-use std::default;
+use std::{any::{TypeId, Any}, collections::HashMap};
 
 use legion::World;
 use winit::{dpi::{PhysicalSize, PhysicalPosition}, event::{ModifiersState, MouseButton}};
-
-pub trait System {
-    fn init(systems: &mut Systems);
-}
 
 #[derive(Default)]
 pub struct Systems {
@@ -13,6 +9,8 @@ pub struct Systems {
 
     key_modifiers: ModifiersState,
     mouse_position: PhysicalPosition<f64>,
+
+    resources: HashMap<TypeId, Box<dyn Any>>,
 }
 
 #[derive(Debug)]
@@ -139,7 +137,6 @@ impl Systems {
                                 winit::event::VirtualKeyCode::Right => Key::Right,
                                 winit::event::VirtualKeyCode::Down => Key::Down,
                                 winit::event::VirtualKeyCode::Tab => Key::Tab,
-                                // winit::event::VirtualKeyCode::Delete => Key::Backspace,
                                 winit::event::VirtualKeyCode::Back => Key::Backspace,
                                 
                                 winit::event::VirtualKeyCode::Space => Key::char(' '),

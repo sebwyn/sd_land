@@ -7,11 +7,11 @@ use winit::{
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
-use crate::renderer::{
+use crate::{renderer::{
     renderer::Renderer, camera::Camera, view::{View, ViewRef}, primitive::{Visible, Vertex}
-};
+}, buffer_system::buffer_on_event};
 
-use crate::{colorscheme::ColorScheme, buffer::{Buffer, buffer_on_event}, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
+use crate::{colorscheme::ColorScheme, buffer::Buffer, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
 
 pub struct EnttRef(pub Entity);
 

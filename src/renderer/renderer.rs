@@ -7,7 +7,16 @@ use simple_error::SimpleError;
 use uuid::Uuid;
 use winit::window::Window;
 
-use super::{pipeline::Pipeline, graphics::Graphics, graphics::{LoadedPipeline, RenderWork}, primitive::{Vertex, Visible, Rectangle}, view::{ViewRef, View}, camera::Camera, shader_types::{Matrix, MaterialValue}, material::Material};
+use super::{
+    pipeline::Pipeline, 
+    graphics::Graphics, 
+    graphics::{LoadedPipeline, RenderWork}, 
+    primitive::{Vertex, Visible, Rectangle}, 
+    view::{ViewRef, View}, 
+    camera::Camera, 
+    shader_types::{Matrix, MaterialValue}, 
+    material::Material
+};
 
 pub struct MaterialInfo {
     pipeline: PipelineHandle,

@@ -7,3 +7,4 @@ pub mod ui_box;
 pub mod system;
 pub mod buffer;
 pub mod colorscheme;
+pub mod buffer_system;
