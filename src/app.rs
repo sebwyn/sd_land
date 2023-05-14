@@ -11,7 +11,7 @@ use crate::renderer::{
     renderer::Renderer, camera::Camera, view::{View, ViewRef}, primitive::{Visible, Vertex}
 };
 
-use crate::{buffer::{Buffer, buffer_on_event, ColorScheme}, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
+use crate::{colorscheme::ColorScheme, buffer::{Buffer, buffer_on_event}, system::Systems, text::prepare_font, ui_box::UiBoxFactory};
 
 pub struct EnttRef(pub Entity);
 

@@ -1,0 +1,43 @@
+Editing:
+**Movements
+  - End of line
+  - Beginning of line
+  - column aware movements
+    . changing lines shouldn't affect your column position
+
+ **Selection
+  - selection along any movement
+  
+  - selection mode -> cursor mode: good support
+    . right arrow, will put the cursor at the end of selection
+    . opposite for left arrow
+
+  - double clicking selects words
+
+**Copy and Paste
+
+**Indention
+
+**Parenthesis 
+ 
+**Find
+  - find in file
+  - find in project
+
+**Multicursor
+  - select next
+  - deselect last selection
+  - insert cursor below and above
+
+**Language support
+  - show errors
+  - autocomplete
+  - 
+
+**Autocomplete
+  - snippets
+  - langauge
+  - text automcomplete
+
+**Optimization
+  - Notes: starting performance: ~25% sd_land cpu usage, ~35% window server cpu

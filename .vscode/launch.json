@@ -39,7 +39,7 @@
                 }
             },
             "args": [
-                "src/renderer.rs"
+                "src/app.rs"
             ],
             "cwd": "${workspaceFolder}"
         },

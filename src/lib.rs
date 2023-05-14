@@ -6,3 +6,4 @@ pub mod text;
 pub mod ui_box;
 pub mod system;
 pub mod buffer;
+pub mod colorscheme;

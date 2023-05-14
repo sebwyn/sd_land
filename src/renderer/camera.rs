@@ -86,7 +86,6 @@ impl Camera {
     }
 
     pub fn view_to_world(&self, point: (f32, f32)) -> (f32, f32) {
-        println!("{:?}", self.eye);
         (self.eye.x + point.0, (self.eye.y + self.height) - point.1)
     }
 }

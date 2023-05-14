@@ -10,117 +10,17 @@ use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HighlightEvent}
 use uuid::Uuid;
 use winit::event::MouseButton;
 
+use crate::colorscheme::{ColorScheme, RUST_HIGHLIGHT_NAMES};
 use crate::renderer::camera::Camera;
 use crate::renderer::primitive::{Vertex, RectangleBuilder};
 use crate::system::{Event, Key};
 use crate::text::Font;
 use crate::renderer::view::{ViewRef, View};
-use crate::ui_box::hex_color;
-
-pub struct ColorScheme {
-    text_color: [f32; 3],
-    keyword_color: [f32; 3],
-    type_color: [f32; 3],
-    function_color: [f32; 3],
-    string_color: [f32; 3],
-    primitive_color: [f32; 3],
-    property_color: [f32; 3],
-    operator_color: [f32; 3],
-    comment_color: [f32; 3],
-    punctuation_color: [f32; 3],
-    line_number_color: [f32; 3]
-}
-
-impl Default for ColorScheme {
-    fn default() -> Self {
-        ColorSchemeBuilder::default().build().unwrap()  
-    }
-}
-
-pub struct ColorSchemeBuilder {
-    text_color: &'static str,        //"#F64740"
-    keyword_color: &'static str,     //"#7a28cb"
-    type_color: &'static str,        //"#ffd952"
-    function_color: &'static str,    //"#166088"
-    string_color: &'static str,      //"#4AAD52"
-    primitive_color: &'static str,   //"#DC2E3F"
-    property_color: &'static str,    //"#F489FA"
-    operator_color: &'static str,    //"#FFFFFF"
-    comment_color: &'static str,     //"#676779"
-    punctuation_color: &'static str, //"#FFFFFF"
-    line_number_color: &'static str, //"#FFFFFF"
-}
-
-impl Default for ColorSchemeBuilder {
-    fn default() -> Self {
-        Self { 
-            text_color:        "#F64740", 
-            keyword_color:     "#7a28cb", 
-            type_color:        "#ffd952", 
-            function_color:    "#166088", 
-            string_color:      "#4AAD52", 
-            primitive_color:   "#DC2E3F", 
-            property_color:    "#F489FA", 
-            operator_color:    "#FFFFFF", 
-            comment_color:     "#676779", 
-            punctuation_color: "#FFFFFF", 
-            line_number_color: "#FFFFFF", 
-        }
-    }
-}
-
-impl ColorSchemeBuilder {
-    pub fn build(&self) -> Result<ColorScheme, SimpleError> {
-        Ok(ColorScheme {
-            text_color: hex_color(self.text_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            keyword_color: hex_color(self.keyword_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            type_color: hex_color(self.type_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            function_color: hex_color(self.function_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            string_color: hex_color(self.string_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            primitive_color: hex_color(self.primitive_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            property_color: hex_color(self.property_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            operator_color: hex_color(self.operator_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            comment_color: hex_color(self.comment_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            punctuation_color: hex_color(self.punctuation_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            line_number_color: hex_color(self.line_number_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-        })
-    }
-
-    pub fn text_color(mut self, text_color: &'static str) -> Self { self.text_color = text_color; self }
-    pub fn keyword_color(mut self, keyword_color: &'static str) -> Self { self.keyword_color = keyword_color; self }
-    pub fn type_color(mut self, type_color: &'static str) -> Self { self.type_color = type_color; self }
-    pub fn function_color(mut self, function_color: &'static str) -> Self { self.function_color = function_color; self }
-    pub fn string_color(mut self, string_color: &'static str) -> Self { self.string_color = string_color; self }
-    pub fn primitive_color(mut self, primitive_color: &'static str) -> Self { self.primitive_color = primitive_color; self }
-    pub fn property_color(mut self, property_color: &'static str) -> Self { self.property_color = property_color; self }
-    pub fn operator_color(mut self, operator_color: &'static str) -> Self { self.operator_color = operator_color; self }
-    pub fn comment_color(mut self, comment_color: &'static str) -> Self { self.comment_color = comment_color; self }
-    pub fn punctuation_color(mut self, punctuation_color: &'static str) -> Self { self.punctuation_color = punctuation_color; self }
-    pub fn line_number_color(mut self, line_number_color: &'static str) -> Self { self.line_number_color = line_number_color; self }
-
-}
-
-const RUST_HIGHLIGHT_NAMES: &[&str] = &[
-    "function",
-    "function.method",
-    "function.macro",
-    "type",
-    "type.builtin",
-    "constructor",
-    "keyword",
-    "escape",
-    "constant.builtin",
-    "property",
-    "operator",
-    "comment",
-    "string",
-    "punctuation"
-];
 
 #[derive(Clone, Copy)]
 pub struct Cursor {
     entity: Entity,
-    position: usize,
+    position: (usize, usize),
 }
 
 pub fn buffer_on_event(world: &mut World, event: &Event) { 
@@ -191,16 +91,13 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     _ => {}
                 }
             }
-
             if !modifiers.logo() && !modifiers.alt() {
                 let character = match key {
                     Key::Char(_, uppercase) if modifiers.shift() && uppercase.is_some() => Some(uppercase.unwrap()),
                     Key::Char(lowercase, _) if !modifiers.shift() => Some(*lowercase),
                     Key::Tab => Some('\t'),
-                    Key::Return => Some('\n'),
                     _ => None
                 };
-                
                 if let Some(character) = character {
                     for buffer in <&mut Buffer>::query().iter_mut(world) {
                         let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
@@ -209,31 +106,53 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                             buffer.insert_at(character, position);
                         }
     
-                        for cursor in buffer.cursors.iter_mut() {
-                            cursor.position += 1;
+                        for i in 0..buffer.cursors.len() {
+                            buffer.cursors[i].position = buffer.move_right(buffer.cursors[i].position)
                         }
                     }
                 } else {
                     match key {
                         Key::Backspace => for buffer in <&mut Buffer>::query().iter_mut(world) {
                             let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
-        
+                            
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position = buffer.move_left(buffer.cursors[i].position)
+                            }
+
                             for position in positions {
                                 buffer.remove_at(position);
                             }
-        
-                            for cursor in buffer.cursors.iter_mut() {
-                                cursor.position -= 1;
-                            }
                         },
+                        Key::Return => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            let positions = buffer.cursors.iter().map(|c| c.position).collect::<Vec<_>>();
+        
+                            for position in positions {
+                                buffer.insert_line(position);
+                            }
+        
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position.0 += 1;
+                                buffer.cursors[i].position.1 = 0;
+                            }
+                        }
                         Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                            for cursor in buffer.cursors.iter_mut() {
-                                cursor.position -= 1;
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position = buffer.move_left(buffer.cursors[i].position)
                             }
                         },
                         Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                            for cursor in buffer.cursors.iter_mut() {
-                                cursor.position += 1;
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position = buffer.move_right(buffer.cursors[i].position)
+                            }
+                        },
+                        Key::Up => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position = buffer.move_up(buffer.cursors[i].position)
+                            }
+                        },
+                        Key::Down => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                            for i in 0..buffer.cursors.len() {
+                                buffer.cursors[i].position = buffer.move_down(buffer.cursors[i].position)
                             }
                         },
                         _ => {}
@@ -254,7 +173,7 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
 
                 if let Some(view_position) = view.to_view(position) {
                     let world_position = camera.view_to_world(view_position);
-                    let (buffer_position, _) = buffer.buffer_position(world_position);
+                    let buffer_position = buffer.buffer_position(world_position);
 
                     buffers_and_positions.insert(buffer.id, buffer_position);
                 }
@@ -312,9 +231,9 @@ struct Highlight {
 
 pub struct Buffer {
     id: Uuid,
-
     file: String,
-    source_code: String,
+
+    lines: Vec<String>,
     
     line_height: f32,
     font_scale: f32,
@@ -337,7 +256,7 @@ impl Buffer {
         self.cursors.push(
             Cursor {
                 entity,
-                position: 0,
+                position: (0, 0),
             }
         );
     }
@@ -357,6 +276,8 @@ impl Buffer {
             .map_err(|e| SimpleError::new(format!("Failed to load the file: {}", e.to_string())))?;
         file.read_to_string(&mut source_code).map_err(|_| SimpleError::new("Failed to read file!"))?;
 
+        let lines = source_code.lines().map(|s| s.to_string()).collect::<Vec<_>>();
+
         //generate initial highlights if available
         let mut highlight_enabled = false;
         if let Some(extension) = file_path.extension() {
@@ -371,6 +292,7 @@ impl Buffer {
                 "",
                 "",
         ).unwrap();
+
         rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
 
         let highlighter = Highlighter::new();
@@ -380,7 +302,8 @@ impl Buffer {
         let mut buffer = Self {
             id,
             file: file_name.to_string(),
-            source_code,
+
+            lines,
 
             line_height,
             font_scale,
@@ -403,28 +326,60 @@ impl Buffer {
     }
 
     pub fn save(&self) {
+        let source_code_buffer = self.lines.join("\n");
+
+
         let mut file = File::create(&self.file)
             .expect("Could not find file to save to");
 
-        file.write_all(self.source_code.as_bytes()).expect("Failed to write to file!");
+        file.write_all(source_code_buffer.as_bytes()).expect("Failed to write to file!");
     }
 
-    pub fn remove_at(&mut self, position: usize) {
-        self.source_code.remove(position - 1);
+    pub fn remove_at(&mut self, (row, col): (usize, usize)) {
+        assert!(row < self.lines.len());
+
+        if col == 0 && row > 0 {
+            //this line needs to removed
+            let current_line = self.lines[row].clone();
+
+            self.lines[row - 1].push_str(&current_line);
+            self.lines.remove(row);
+        } else {
+            self.lines[row].remove(col - 1);
+        }
 
         if self.highlight_enabled { self.update_highlights(); }
+
+    
     }   
 
-    pub fn insert_at(&mut self, character: char, position: usize) {
-        self.source_code.insert(position, character);
+    pub fn insert_at(&mut self, character: char, (row, col): (usize, usize)) {
+        if let Some(line) = self.lines.get_mut(row) {
+            line.insert(col, character);
+        }
 
         if self.highlight_enabled { self.update_highlights(); }
+    }
+
+    pub fn insert_line(&mut self, (row, col): (usize, usize)) {
+        let (prev_line, new_line) = {
+            let current_line = &self.lines[row];
+            let (prev_line, new_line) = current_line.split_at(col);
+
+            (prev_line.to_string(), new_line.to_string())
+        };
+
+        self.lines[row] = new_line;
+        self.lines.insert(row, prev_line);
+
     }
 
     pub fn update_highlights(&mut self) {
+        let buffer = self.lines.join("\n");
+
         let highlights = self.highlighter.highlight(
             &self.rust_highlight_configuration, 
-            self.source_code.as_bytes(), 
+            buffer.as_bytes(), 
             None, 
             |_| None).unwrap();
         
@@ -459,7 +414,8 @@ impl Buffer {
         
         let num_lines = end_line - start_line;
 
-        let start_byte: usize = self.source_code.lines().take(start_line).map(|l| l.len() + 1).sum();
+        let source_code_buffer = self.lines.join("\n");
+        let start_byte: usize = source_code_buffer.lines().take(start_line).map(|l| l.len() + 1).sum();
 
         let mut vertices = Vec::new();
 
@@ -497,7 +453,7 @@ impl Buffer {
                 }
             }
 
-            let current_char = self.source_code.as_bytes().get(byte).copied();
+            let current_char = source_code_buffer.as_bytes().get(byte).copied();
             if current_char.is_none() { break }
             let current_char = current_char.unwrap() as char;
 
@@ -509,7 +465,7 @@ impl Buffer {
             }
 
             //otherwise print the character nicely
-            let next_character = self.source_code.as_bytes().get(byte + 1).map(|c| *c as char);
+            let next_character = source_code_buffer.as_bytes().get(byte + 1).map(|c| *c as char);
 
             let (right, rectangle) = self.font.layout_character(
                 current_char, 
@@ -527,21 +483,24 @@ impl Buffer {
         vertices
     }
 
-    pub fn buffer_position(&self, world_position: (f32, f32)) -> (usize, (usize, usize)) {
+    pub fn buffer_position(&self, world_position: (f32, f32)) -> (usize, usize) {
         //calculate what line we're on
-        let row = if world_position.1 < 0.0 {
+        let mut row = if world_position.1 < 0.0 {
             (-world_position.1 / self.line_height) as usize + 1
         } else {
             0usize
         };
 
-        let line_character_offset: usize = self.source_code
-            .split('\n')
-            .take(row)
-            .map(|line| line.len() + 1)
-            .sum();
+        let last_line = self.lines.len() - 1;
+        if row > last_line {
+            row = last_line;
+            let last_line_text = self.lines.last().map(|s| s.as_str()).unwrap_or("");
+            let col = last_line_text.len();
 
-        let line = self.source_code.lines().nth(row).unwrap();
+            return (row, col)
+        }
+
+        let line = self.lines.get(row).unwrap();
 
         let mut column = 0usize;
         let mut width = 0f32;
@@ -561,34 +520,67 @@ impl Buffer {
             }
                 
             if width > world_position.0 { break }
-
             column += 1;
         }
 
-        (line_character_offset + column, (row, column))
+        (row, column)
     }
 
-    pub fn world_position(&self, position: usize) -> (f32, f32) {
-        let line_lengths = self.source_code.lines().map(|l| l.len() + 1);
+    pub fn world_position(&self, (row, col): (usize, usize)) -> (f32, f32) {
+        let y_pos = -1.0 * row as f32 * self.line_height;
 
-        let mut lines_before = 0;
-        let mut characters_before = 0;
-        for line_length in line_lengths {
-            let new_length = characters_before + line_length;
-            if new_length > position {
-                break;
-            } else {
-                characters_before = new_length;
-                lines_before += 1;
-            }
-        }
+        let current_line = self.lines.get(row).map(|s| s.as_str()).unwrap_or("");
+        
+        let actual_column = col.clamp(0, current_line.len());
 
-        let text_before = self.source_code.get(characters_before..position).unwrap();  
+        let preceding_text = current_line.get(0..actual_column).unwrap();
+        let x_pos = self.font.get_str_pixel_width(preceding_text, self.font_scale);
 
-        let width = self.font.get_str_pixel_width(text_before, self.font_scale);
-
-        (width, -1.0 * self.line_height * lines_before as f32)
+        (x_pos, y_pos)
     }   
+
+    pub fn move_right(&self, (row, col): (usize, usize)) -> (usize, usize) {
+        let current_line = self.lines.get(row).unwrap();
+
+        if col < current_line.len() {
+            (row, col + 1)
+        } else if row < self.lines.len() - 1 {
+            (row + 1, 0)
+        } else {
+            (row, col)
+        }
+    }
+
+    pub fn move_left(&self, (row, mut col): (usize, usize)) -> (usize, usize) {
+        let current_line = self.lines.get(row).unwrap();
+
+        col = col.clamp(0, current_line.len());
+
+        if col > 0 {
+            (row, col - 1)
+        } else if row > 0 {
+            let previous_row = &self.lines[row - 1];
+            (row - 1, previous_row.len())
+        } else {
+            (row, col)
+        }
+    }
+
+    pub fn move_up(&self, (row, col): (usize, usize)) -> (usize, usize) {
+        if row > 0 {
+            (row - 1, col)
+        } else {
+            (row, col)
+        }
+    }
+
+    pub fn move_down(&self, (row, col): (usize, usize)) -> (usize, usize) {
+        if row < self.lines.len() - 1 {
+            (row + 1, col)
+        } else {
+            (row, col)
+        }
+    }
 }
 
 fn get_highlight_for_code_type(code_type: &str, color_scheme: &ColorScheme) -> [f32; 3] {
