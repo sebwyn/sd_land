@@ -38,5 +38,39 @@ Editing:
   - langauge
   - text automcomplete
 
+**Make it capable
+    - better movements, suited to rust
+    - Langauge support
+    - really good support for running scripts on buffers
+
+    - filtering buffers
+
+    - everything is a buffer
+
+    - pull in documentation from the web, with web scrapers
+    - can I chat with chatGPT
+    - ....
+    - What does autoGPT visualization look like, can I view attention
+
+**Make it pretty
+    - background images
+    - mutable rust variables, have a shader, wobbly affect?
+    - animation, 100%, animated selection, animated cursor
+    - make the ai dream on the text in the file, to create a background
+
+    - what if each file has it's own personality, different theme, different background
+    - what if thats imagery, and that whatever is dreampt by stable diffusion
+
+**Other features/directions
+    - Integrate message sequence diagram grapher, edit code directly from a MSD
+    - hot reloading of code, this becomes the editor on top of the game?
+    - hot reloading shaders
+    - a really good api
+
+    - an editor that lets you write code for it within it, think emacs?
+
+Rendering other formats? Markdown?
+ 
+
 **Optimization
   - Notes: starting performance: ~25% sd_land cpu usage, ~35% window server cpu

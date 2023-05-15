@@ -27,13 +27,10 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
 
     let buffer_view = BufferView::new(0, 2800, 0, 3200)
         .font("Roboto Mono")
-        .line_height(40f32)
-        .font_scale(0.4);
+        .line_height(45f32)
+        .font_scale(0.5);
 
-    let mut buffer = Buffer::load(&file).unwrap();
-
-    buffer.insert_cursor();
-    buffer.insert_highlighted_range((0, 0), (0, 10));
+    let buffer = Buffer::load(&file).unwrap();
 
     world.push((
         buffer,
@@ -51,8 +48,6 @@ pub fn run() {
     let window = WindowBuilder::new()
         .with_inner_size(PhysicalSize::<u32> { width: 3200, height: 2400 })
         .build(&event_loop).unwrap();
-
-
 
     let mut renderer = Renderer::new(&window);
     let mut world = World::default();
@@ -96,10 +91,10 @@ pub fn run() {
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     Err(e) => eprintln!("{:?}", e),
                 }
-            }
+            },
             Event::MainEventsCleared => {
                 window.request_redraw();
-            }
+            },
             _ => {}
         }
     });

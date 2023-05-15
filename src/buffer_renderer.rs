@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use legion::{World, IntoQuery};
 use winit::dpi::PhysicalPosition;
 
-use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
+use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight, BufferRange}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
 
 
 
@@ -166,10 +166,13 @@ impl<'a> BufferPass<'a> {
     #[inline] fn start_y(&self) -> f32 { self.buffer_view.camera.view_top() }
     #[inline] fn end_y(&self) -> f32 { self.buffer_view.camera.view_bottom() }
 
-    pub fn render_highlight_ranges(&self) -> Vec<Vertex> {
+    #[inline] fn buffer_ranges(&self) -> &[BufferRange] { self.buffer.selection.as_slice() }
+    #[inline] fn cursors(&self) -> Vec<Cursor> { vec![self.buffer.cursor] }
+
+    pub fn render_buffer_ranges(&self) -> Vec<Vertex> {
         let padding_width = self.font().get_char_pixel_width(' ', None, self.font_scale());
 
-        self.buffer.highlighted_ranges.iter().flat_map(|range| {
+        self.buffer_ranges().iter().flat_map(|range| {
             let (start, end) = range.start_end();
 
             let mut vertices = Vec::new();
@@ -280,7 +283,7 @@ impl<'a> BufferPass<'a> {
     }
 
     pub fn render_cursors(&self) -> Vec<Vertex> {
-        self.buffer.cursors.iter().flat_map(|&Cursor(x, y)| {
+        self.cursors().iter().flat_map(|&Cursor(x, y)| {
             let (world_x, world_y) = self.world_position((x, y));
 
             RectangleBuilder::default()
@@ -358,7 +361,7 @@ impl Subrenderer for BufferRenderer {
             renderer.update_material(self.cursor_material.unwrap(), "view_proj", view_proj_matrix.clone());
 
             let text_vertices = buffer_pass.render_text();
-            let range_vertices = buffer_pass.render_highlight_ranges();
+            let range_vertices = buffer_pass.render_buffer_ranges();
             let cursor_vertices = buffer_pass.render_cursors();
 
             let text_work = Self::create_render_work(text_vertices, text_material);

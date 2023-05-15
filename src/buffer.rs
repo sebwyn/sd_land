@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::thread::current;
 use std::{fs::File, io::Read, path::Path};
 
 use std::str;
@@ -17,12 +18,12 @@ pub struct Highlight {
     pub(super) end_byte: usize,
 }
 
-pub struct HighlightedRange {
+pub struct BufferRange {
     pub(super) p1: (usize, usize),
     pub(super) p2: (usize, usize),
 }
 
-impl HighlightedRange {
+impl BufferRange {
     pub fn new(p1: (usize, usize), p2: (usize, usize)) -> Self {
         Self {
             p1,
@@ -47,9 +48,8 @@ pub struct Buffer {
 
     lines: Vec<String>,
 
-    pub(super) cursors: Vec<Cursor>,
-    pub(super) highlighted_ranges: Vec<HighlightedRange>,
-
+    pub(super) cursor: Cursor,
+    pub(super) selection: Option<BufferRange>,
 
     rust_highlight_configuration: HighlightConfiguration,
     highlighter: Highlighter,
@@ -61,21 +61,6 @@ pub struct Buffer {
 impl Buffer {
     pub fn lines(&self) -> &[String] {
         &self.lines
-    }
-
-    pub fn insert_cursor(&mut self) {
-        self.cursors.push(
-            Cursor(0, 0)
-        );
-    }
-
-    pub fn insert_highlighted_range(&mut self, p1: (usize, usize), p2: (usize, usize)) {
-        self.highlighted_ranges.push(
-            HighlightedRange {
-                p1, 
-                p2 
-            }
-        );
     }
 
     pub fn load(file_name: &str) -> Result<Self, SimpleError> {
@@ -114,13 +99,16 @@ impl Buffer {
 
         let highlighter = Highlighter::new();
 
+        let cursor = Cursor(0, 0);
+
+
         let mut buffer = Self {
             file: file_name.to_string(),
 
             lines,
 
-            cursors: Vec::new(),
-            highlighted_ranges: Vec::new(),
+            cursor,
+            selection: None,
 
             highlight_enabled,
             rust_highlight_configuration,
@@ -144,42 +132,78 @@ impl Buffer {
         file.write_all(source_code_buffer.as_bytes()).expect("Failed to write to file!");
     }
 
-    pub fn remove_at(&mut self, cursor: Cursor) {
-        let row = cursor.0;
-        let mut col = cursor.1;
+    //TODO: make this better
+    pub fn delete_selection(&mut self) {
+        if let Some(selection) = &self.selection.take() {
+            let (start, end) = selection.start_end();
 
-        assert!(row < self.lines.len());
+            let merged_line = self.lines[start.0].split_at(start.1).0.to_string() +
+                self.lines[end.0].split_at(end.1).1;
 
-        //clamp the position to the lines columns
-        col = col.clamp(0, self.lines[row].len());
+            self.lines.drain(start.0..end.0+1);
+            self.lines.insert(start.0, merged_line);
 
-        if col == 0 && row > 0 {
-            //this line needs to removed
-            let current_line = self.lines[row].clone();
-
-            self.lines[row - 1].push_str(&current_line);
-            self.lines.remove(row);
-        } else {
-            self.lines[row].remove(col - 1);
+            self.cursor = Cursor(start.0, start.1);
         }
-
-        if self.highlight_enabled { self.update_highlights(); }
-    }   
-
-    pub fn insert_at(&mut self, character: char, cursor: Cursor) {
-        let row = cursor.0;
-        let mut col = cursor.1;
-
-        col = col.clamp(0, self.lines[row].len());
-        
-        if let Some(line) = self.lines.get_mut(row) {
-            line.insert(col, character);
-        }
-
-        if self.highlight_enabled { self.update_highlights(); }
     }
 
-    pub fn insert_str_at(&mut self, str: &str, cursor: Cursor) -> Cursor {
+    pub fn insert_character(&mut self, character: char) {
+        self.delete_selection();
+        
+        //bring the cursor to the end of the line
+        let current_line = &mut self.lines[self.cursor.0];
+        let mut cursor = Cursor(self.cursor.0, self.cursor.1.clamp(0, current_line.len()));
+
+        current_line.insert(cursor.1, character);
+        cursor.1 += 1;
+
+        self.cursor = cursor;
+
+        self.update_highlights()
+    }
+
+    pub fn delete(&mut self) {
+        if self.selection.is_some() {
+            self.delete_selection();
+        } else {
+            //bring the cursor to the end of the line
+            if self.cursor.1 > 0 {
+                let current_line = &mut self.lines[self.cursor.0];
+                let mut cursor = Cursor(self.cursor.0, self.cursor.1.clamp(0, current_line.len()));
+                cursor.1 -= 1;
+                current_line.remove(cursor.1);
+                self.cursor = cursor;
+            } else if self.cursor.0 > 0 {
+                //merge the lines
+                let current_line = self.lines.remove(self.cursor.0);
+                let previous_line = &mut self.lines[self.cursor.0 - 1];
+                let cursor = Cursor(self.cursor.0 - 1, previous_line.len());
+                previous_line.push_str(&current_line);
+                self.cursor = cursor;
+            }
+        }  
+
+        self.update_highlights()
+    }
+
+    pub fn insert_newline(&mut self) {
+        self.delete_selection();
+
+        let col = self.cursor.1.clamp(0, self.lines[self.cursor.0].len());
+
+        let (before, after) = self.lines[self.cursor.0].split_at(col);
+        let before = before.to_string();
+        let after = after.to_string();
+        
+        self.lines[self.cursor.0] = before;
+        self.lines.insert(self.cursor.0 + 1, after);
+
+        self.cursor = Cursor(self.cursor.0 + 1, 0);
+
+        self.update_highlights();
+    }
+
+    /*pub fn insert_string(&mut self, str: &str) -> Cursor {
         let row = cursor.0;
         let mut col = cursor.1;
 
@@ -210,26 +234,7 @@ impl Buffer {
         if self.highlight_enabled { self.update_highlights(); }
 
         Cursor(current_row, end_column)
-    }
-
-    pub fn insert_line(&mut self, cursor: Cursor) {
-        let row = cursor.0;
-        let mut col = cursor.1;
-
-        col = col.clamp(0, self.lines[row].len());
-        
-        let (prev_line, new_line) = {
-            let current_line = &self.lines[row];
-            let (prev_line, new_line) = current_line.split_at(col);
-
-            (prev_line.to_string(), new_line.to_string())
-        };
-
-        self.lines[row] = new_line;
-        self.lines.insert(row, prev_line);
-
-        if self.highlight_enabled { self.update_highlights(); }
-    }
+    }*/
 
     pub fn update_highlights(&mut self) {
         let buffer = self.lines.join("\n");

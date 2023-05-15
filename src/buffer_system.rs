@@ -1,6 +1,6 @@
 use legion::{World, IntoQuery};
 use winit::event::MouseButton;
-use crate::{system::{Event, MouseDrag, Key}, buffer_renderer::BufferView, buffer::{Buffer, HighlightedRange}};
+use crate::{system::{Event, MouseDrag, Key}, buffer_renderer::BufferView, buffer::{Buffer, BufferRange}};
 
 #[derive(Clone, Copy)]
 pub struct Cursor(pub usize, pub usize);
@@ -16,37 +16,20 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
             };
             if let Some(character) = character {
                 for buffer in <&mut Buffer>::query().iter_mut(world) {
-                    let positions = buffer.cursors.iter().collect::<Vec<_>>();
-
-                    for i in 0..buffer.cursors.len() {
-                        buffer.insert_at(character, buffer.cursors[i]);
-                        buffer.cursors[i] = buffer.move_right(buffer.cursors[i])
-                    }
+                    buffer.insert_character(character);
                 }
             } else {
-                /*match key {
+                match key {
                     Key::Backspace => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        let positions = buffer.cursors.iter().map(|c| c).collect::<Vec<_>>();
-                        
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_left(buffer.cursors[i]);
-                            buffer.remove_at(**position);
-                        }
+                        buffer.delete();
                     },
                     Key::Return => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        let positions = buffer.cursors.iter().map(|c| c).collect::<Vec<_>>();
-    
-                        for (i, position) in positions.iter().enumerate() {
-                            buffer.insert_line(**position);
-                            buffer.cursors[i].0 += 1;
-                            buffer.cursors[i].1 = 0;
-                        }
+                        buffer.insert_newline();
                     },
-                    Key::Tab => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        let positions = buffer.cursors.iter().map(|c| c).collect::<Vec<_>>();
-                        
-                        for (i, position) in positions.iter().enumerate() {
-                            let new_position = buffer.insert_str_at("    ", **position);
+                    /*Key::Tab => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        for i in 0..buffer.cursors.len() {
+                            let position = buffer.cursors[i];
+                            let new_position = buffer.insert_str_at("    ", position);
                             buffer.cursors[i] = new_position;
                         }
 
@@ -70,13 +53,12 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                         for i in 0..buffer.cursors.len() {
                             buffer.cursors[i] = buffer.move_down(buffer.cursors[i])
                         }
-                    },
+                    },*/
                     _ => {}
-                }*/
+                }
             }
         },
-        /*Event::KeyPress(key, modifiers) => {
-            if modifiers.logo() && !modifiers.shift() && !modifiers.alt() && !modifiers.ctrl() {
+        Event::KeyPress(key, modifiers) if modifiers.logo() && !modifiers.shift() && !modifiers.alt() && !modifiers.ctrl() => {
                 match key {
                     Key::Char(s, ..) if *s == 's' => {
                         let mut query = <&Buffer>::query();
@@ -86,20 +68,20 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     }
                     _ => {}
                 }
-            } else if modifiers.alt() && !modifiers.ctrl() && !modifiers.logo()  {
-                match key {
-                    Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_forward_word(buffer.cursors[i]);
-                        }
-                    },
-                    Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_backward_word(buffer.cursors[i]);
-                        }
-                    },
-                    _ => {}
-                }
+        },
+        /*Event::KeyPress(key, modifiers) if modifiers.alt() && !modifiers.ctrl() && !modifiers.logo() => {
+            match key {
+                Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                    for i in 0..buffer.cursors.len() {
+                        buffer.cursors[i] = buffer.move_forward_word(buffer.cursors[i]);
+                    }
+                },
+                Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                    for i in 0..buffer.cursors.len() {
+                        buffer.cursors[i] = buffer.move_backward_word(buffer.cursors[i]);
+                    }
+                },
+                _ => {}
             }
         },*/
         Event::MouseScroll(scroll, position) => {
@@ -111,11 +93,9 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
         },
         Event::MouseClick(MouseButton::Left, position, ..) => {
             for (buffer, buffer_view) in <(&mut Buffer, &BufferView)>::query().iter_mut(world) {
-                assert!(buffer.cursors.len() == 1);
-
                 if let Some((row, col)) = buffer_view.buffer_position(buffer, position) {
-                    buffer.cursors[0] = Cursor(row, col);
-                    buffer.highlighted_ranges.clear();
+                    buffer.cursor = Cursor(row, col);
+                    buffer.selection = None;
                 }
             }
         },
@@ -128,10 +108,10 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
             for (buffer, buffer_view) in <(&mut Buffer, &BufferView)>::query().iter_mut(world) {
                 if let Some(start_buffer_position) = buffer_view.buffer_position(buffer, start) {
                     if let Some(end_buffer_position) = buffer_view.buffer_position(buffer, current_position){
-                        buffer.highlighted_ranges.clear();
-                        buffer.highlighted_ranges.push(HighlightedRange::new(start_buffer_position, end_buffer_position));
-
-                        buffer.cursors[0] = Cursor(end_buffer_position.0, end_buffer_position.1);
+                        buffer.selection = None;
+                        buffer.selection = Some(BufferRange::new(start_buffer_position, end_buffer_position));
+                        
+                        buffer.cursor = Cursor(end_buffer_position.0, end_buffer_position.1);
                     }
                 }
             }
