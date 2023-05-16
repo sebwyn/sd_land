@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::thread::current;
 use std::{fs::File, io::Read, path::Path};
 
 use std::str;
@@ -203,12 +202,11 @@ impl Buffer {
         self.update_highlights();
     }
 
-    /*pub fn insert_string(&mut self, str: &str) -> Cursor {
-        let row = cursor.0;
-        let mut col = cursor.1;
+    pub fn insert_string(&mut self, str: &str) {
+        self.delete_selection();
 
-        col = col.clamp(0, self.lines[row].len());
-        
+        let row = self.cursor.0;
+        let col = self.cursor.1.clamp(0, self.lines[row].len());
         
         let (preceding_text, following_text) = self.lines[row].split_at(col);
         let preceding_text = preceding_text.to_string();
@@ -225,16 +223,17 @@ impl Buffer {
 
             if lines.peek().is_some() {
                 current_row += 1;
-                self.insert_line(Cursor(current_row, 0))
+                self.lines.insert(current_row, String::new())
             }
         }
+
         let end_column = self.lines[current_row].len();
         self.lines[current_row] += &following_text;
 
-        if self.highlight_enabled { self.update_highlights(); }
+        self.cursor = Cursor(current_row, end_column);
 
-        Cursor(current_row, end_column)
-    }*/
+        if self.highlight_enabled { self.update_highlights(); }
+    }
 
     pub fn update_highlights(&mut self) {
         let buffer = self.lines.join("\n");
@@ -270,91 +269,161 @@ impl Buffer {
         }
     }
 
-    pub fn move_right(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let col = cursor.1;
+    pub fn move_right(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
 
-        let current_line = self.lines.get(row).unwrap();
+        let row = self.cursor.0;
+        let col = self.cursor.1.clamp(0, self.lines[row].len());
+        
+        let current_line = &self.lines[row];
 
         if col < current_line.len() {
-            Cursor(row, col + 1)
+            self.cursor = Cursor(row, col + 1)
         } else if row < self.lines.len() - 1 {
-            Cursor(row + 1, 0)
+            self.cursor = Cursor(row + 1, 0)
         } else {
-            Cursor(row, col)
+            self.cursor = Cursor(row, col)
+        }
+
+        if highlight {
+            if let Some(selection) = &mut self.selection {
+                selection.p2 = (self.cursor.0, self.cursor.1);
+            } else {
+                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
+            }
+        } else {
+            self.selection = None;
         }
     }
 
-    pub fn move_left(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let mut col = cursor.1;
-
-        let current_line = self.lines.get(row).unwrap();
-
-        col = col.clamp(0, current_line.len());
+    pub fn move_left(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
+        
+        let row = self.cursor.0;
+        let col = self.cursor.1.clamp(0, self.lines[row].len());
 
         if col > 0 {
-            Cursor(row, col - 1)
+            self.cursor = Cursor(row, col - 1)
         } else if row > 0 {
             let previous_row = &self.lines[row - 1];
-            Cursor(row - 1, previous_row.len())
+            self.cursor = Cursor(row - 1, previous_row.len())
         } else {
-            Cursor(row, col)
+            self.cursor = Cursor(row, col)
+        }
+
+        if highlight {
+            if let Some(selection) = &mut self.selection {
+                selection.p2 = (self.cursor.0, self.cursor.1);
+            } else {
+                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
+            }
+        } else {
+            self.selection = None;
         }
     }
 
-    pub fn move_up(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let col = cursor.1;
+    pub fn move_up(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
 
-        if row > 0 {
-            Cursor(row - 1, col)
+        let row = self.cursor.0;
+        let col = self.cursor.1;
+
+        if row == 0 {
+            self.cursor = Cursor(row, col)
         } else {
-            Cursor(row, col)
+            self.cursor = Cursor(row - 1, col)
+        }
+
+        if highlight {
+            if let Some(selection) = &mut self.selection {
+                selection.p2 = (self.cursor.0, self.cursor.1);
+            } else {
+                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
+            }
+        } else {
+            self.selection = None;
+
         }
     }
 
-    pub fn move_down(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let col = cursor.1;
+    pub fn move_down(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
+
+        let row = self.cursor.0;
+        let col = self.cursor.1;
 
         if row < self.lines.len() - 1 {
-            Cursor(row + 1, col)
+            self.cursor = Cursor(row + 1, col)
         } else {
-            Cursor(row, col)
+            self.cursor = Cursor(row, col);
+            return
+        }
+
+        if highlight {
+            if let Some(selection) = &mut self.selection {
+                selection.p2 = (self.cursor.0, self.cursor.1);
+            } else {
+                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
+            }
+        } else {
+            self.selection = None;
         }
     }
 
-    pub fn move_forward_word(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let col = cursor.1;
+    pub fn move_forward_word(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
+        
+        let row = self.cursor.0;
+        let col = self.cursor.1.clamp(0, self.lines[row].len());
 
         let line_bounday_regex = Regex::new(r"(\b|$)").unwrap();
 
         let line_text = &self.lines[row];
         
-        if let Some(m) = line_bounday_regex.find_iter(line_text).find(|m| m.start() > col) {
-            return Cursor(row, m.start());
-        }
-        if let Some(next_line) = self.lines.get(row + 1) {
+        let current_line_match = line_bounday_regex.find_iter(line_text).find(|m| m.start() > col);
+        if let Some(m) = current_line_match {
+            self.cursor = Cursor(row, m.start());
+
+            if highlight {
+                if let Some(selection) = &mut self.selection {
+                    selection.p2 = (self.cursor.0, self.cursor.1);
+                } else {
+                    self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1)} )
+                }
+            } else {
+                self.selection = None;
+            }
+        } else if let Some(next_line) = self.lines.get(row + 1) {
             if next_line.is_empty() {
                 let next_line_match = line_bounday_regex
                     .find(next_line)
                     .map(|m| m.start())
                     .unwrap_or(0);
-                Cursor(row + 1, next_line_match)
+                self.cursor = Cursor(row + 1, next_line_match)
             } else {
-                Cursor(row + 1, 0)
+                self.cursor = Cursor(row + 1, 0)
             }
-            
+
+            if highlight {
+                if let Some(selection) = &mut self.selection {
+                    selection.p2 = (self.cursor.0, self.cursor.1);
+                } else {
+                    self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1)} )
+                }
+            } else {
+                self.selection = None;
+            }
+
         } else {
-            Cursor(row, col)
+            self.cursor = Cursor(row, col)
         } 
     }
 
-    pub fn move_backward_word(&self, cursor: Cursor) -> Cursor {
-        let row = cursor.0;
-        let col = cursor.1;
+    pub fn move_backward_word(&mut self, highlight: bool) {
+        let p1 = (self.cursor.0, self.cursor.1);
+
+        let row = self.cursor.0;
+        let col = self.cursor.1.clamp(0, self.lines[row].len());
 
         let line_bounday_regex = Regex::new(r"(\b|$|^)").unwrap();
 
@@ -365,18 +434,28 @@ impl Buffer {
         //if the first match is greater than the c
         if col == 0 {
             if row > 0 {
-                return Cursor(row - 1, self.lines[row - 1].len())
+                self.cursor = Cursor(row - 1, self.lines[row - 1].len())
             } else {
-                return Cursor(row, col)
+                self.cursor = Cursor(row, col);
+                return
             }
         }
 
         while let Some(m) = matches.next() {
             if matches.peek().map(|m| m.start() >= col).unwrap_or(false) {
-                return Cursor(row, m.start());
+                self.cursor = Cursor(row, m.start());
+                break
             }
         }
 
-        Cursor(row, col)
+        if highlight {
+            if let Some(selection) = &mut self.selection {
+                selection.p2 = (self.cursor.0, self.cursor.1);
+            } else {
+                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) })
+            }
+        } else {
+            self.selection = None
+        }
     }
 }

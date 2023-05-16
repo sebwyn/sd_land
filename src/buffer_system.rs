@@ -26,34 +26,21 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     Key::Return => for buffer in <&mut Buffer>::query().iter_mut(world) {
                         buffer.insert_newline();
                     },
-                    /*Key::Tab => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            let position = buffer.cursors[i];
-                            let new_position = buffer.insert_str_at("    ", position);
-                            buffer.cursors[i] = new_position;
-                        }
-
-                    }
+                    Key::Tab => for buffer in <&mut Buffer>::query().iter_mut(world) {
+                        buffer.insert_string("    ");
+                    },
                     Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_left(buffer.cursors[i])
-                        }
+                        buffer.move_left(modifiers.shift());
                     },
                     Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_right(buffer.cursors[i])
-                        }
+                       buffer.move_right(modifiers.shift());
                     },
                     Key::Up => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_up(buffer.cursors[i])
-                        }
+                        buffer.move_up(modifiers.shift());
                     },
                     Key::Down => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                        for i in 0..buffer.cursors.len() {
-                            buffer.cursors[i] = buffer.move_down(buffer.cursors[i])
-                        }
-                    },*/
+                        buffer.move_down(modifiers.shift());
+                    },
                     _ => {}
                 }
             }
@@ -69,21 +56,17 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                     _ => {}
                 }
         },
-        /*Event::KeyPress(key, modifiers) if modifiers.alt() && !modifiers.ctrl() && !modifiers.logo() => {
+        Event::KeyPress(key, modifiers) if modifiers.alt() && !modifiers.ctrl() && !modifiers.logo() => {
             match key {
                 Key::Right => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                    for i in 0..buffer.cursors.len() {
-                        buffer.cursors[i] = buffer.move_forward_word(buffer.cursors[i]);
-                    }
+                    buffer.move_forward_word(modifiers.shift());
                 },
                 Key::Left => for buffer in <&mut Buffer>::query().iter_mut(world) {
-                    for i in 0..buffer.cursors.len() {
-                        buffer.cursors[i] = buffer.move_backward_word(buffer.cursors[i]);
-                    }
+                    buffer.move_backward_word(modifiers.shift());
                 },
                 _ => {}
             }
-        },*/
+        },
         Event::MouseScroll(scroll, position) => {
             for buffer_view in <&mut BufferView>::query().iter_mut(world) {
                 if buffer_view.contains(position) {
