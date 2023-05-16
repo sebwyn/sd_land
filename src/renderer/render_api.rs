@@ -36,9 +36,11 @@ impl Renderer {
     }
 
     pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
+        self.api.begin_render()?;
         for renderer in &mut self.subrenderers {
             renderer.render(world, &mut self.api)?;
         }
+        self.api.flush();
 
         Ok(())
     }
@@ -98,10 +100,13 @@ impl RenderApi {
         }
     }
 
-    pub fn submit_work(&mut self, work: &[RenderWork], clear_color: Option<[f32; 3]>, view: Option<&View>) 
+    pub fn begin_render(&mut self) -> Result<(), wgpu::SurfaceError> { self.graphics.begin_render()?; Ok(()) }
+    pub fn flush(&mut self) { self.graphics.flush(); }
+
+    pub fn submit_subrender(&mut self, work: &[RenderWork], view: Option<&View>) 
      -> Result<(), wgpu::SurfaceError> 
     {
-        self.graphics.begin_render(clear_color)?;
+        self.graphics.clear_depth()?;
 
         for RenderWork { vertices, indices, material } in work {
             let vertex_buffer = self.graphics.create_vertex_buffer(vertices);
@@ -139,9 +144,6 @@ impl RenderApi {
                 view,
             }])?;
         }
-        
-        self.graphics.flush();
-
         Ok(())
     }
 
@@ -160,11 +162,11 @@ impl RenderApi {
         let diffuse_image = image::load_from_memory(&diffuse_bytes).unwrap();
         let diffuse_rgba = diffuse_image.to_rgba8();
 
-        self.textures.insert(uuid, self.graphics.create_texture(diffuse_rgba)?);
+        self.textures.insert(uuid, self.graphics.create_texture(&diffuse_rgba)?);
         Ok(uuid)
     }
 
-    pub fn create_texture<P, S>(&mut self, image: ImageBuffer<P, S>) -> Result<TextureHandle, SimpleError> 
+    pub fn create_texture<P, S>(&mut self, image: &ImageBuffer<P, S>) -> Result<TextureHandle, SimpleError> 
     where 
         P: image::Pixel<Subpixel = u8>,
         S: Deref<Target = [<P as image::Pixel>::Subpixel]>,

@@ -131,6 +131,40 @@ impl Buffer {
         file.write_all(source_code_buffer.as_bytes()).expect("Failed to write to file!");
     }
 
+    pub fn update_highlights(&mut self) {
+        let buffer = self.lines.join("\n");
+
+        let highlights = self.highlighter.highlight(
+            &self.rust_highlight_configuration, 
+            buffer.as_bytes(), 
+            None, 
+            |_| None).unwrap();
+        
+        self.highlights.clear();
+        
+        let mut currently_no_higlighting = true;
+        for event in highlights {
+            match event.unwrap() {
+                HighlightEvent::Source {start, end} => {
+                    if currently_no_higlighting {
+                        self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
+                    } else {
+                        let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
+                        last_highlight.start_byte = start;
+                        last_highlight.end_byte = end;
+                    }
+                },
+                HighlightEvent::HighlightStart(s) => {
+                    self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
+                    currently_no_higlighting = false;
+                },
+                HighlightEvent::HighlightEnd => {
+                    currently_no_higlighting = true;
+                },
+            }
+        }
+    }
+
     //TODO: make this better
     pub fn delete_selection(&mut self) {
         if let Some(selection) = &self.selection.take() {
@@ -235,45 +269,27 @@ impl Buffer {
         if self.highlight_enabled { self.update_highlights(); }
     }
 
-    pub fn update_highlights(&mut self) {
-        let buffer = self.lines.join("\n");
+    pub fn editing_position(&self, cursor: Cursor) -> (usize, usize) {
+        let row = cursor.0;
+        let col = cursor.1.clamp(0, self.lines[row].len());
+        (row, col)
+    }
 
-        let highlights = self.highlighter.highlight(
-            &self.rust_highlight_configuration, 
-            buffer.as_bytes(), 
-            None, 
-            |_| None).unwrap();
+    //only update the end of the selection if it already exists
+    pub fn update_selection(&mut self, start: (usize, usize), end: (usize, usize)) {
+        let p1 = self.editing_position(Cursor(start.0, start.1));
+        let p2 = self.editing_position(Cursor(end.0, end.1));
         
-        self.highlights.clear();
-        
-        let mut currently_no_higlighting = true;
-        for event in highlights {
-            match event.unwrap() {
-                HighlightEvent::Source {start, end} => {
-                    if currently_no_higlighting {
-                        self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
-                    } else {
-                        let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
-                        last_highlight.start_byte = start;
-                        last_highlight.end_byte = end;
-                    }
-                },
-                HighlightEvent::HighlightStart(s) => {
-                    self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
-                    currently_no_higlighting = false;
-                },
-                HighlightEvent::HighlightEnd => {
-                    currently_no_higlighting = true;
-                },
-            }
+        if let Some(selection) = &mut self.selection {
+            selection.p2 = p2;
+        } else {
+            self.selection = Some(BufferRange { p1, p2 })
         }
     }
 
     pub fn move_right(&mut self, highlight: bool) {
         let p1 = (self.cursor.0, self.cursor.1);
-
-        let row = self.cursor.0;
-        let col = self.cursor.1.clamp(0, self.lines[row].len());
+        let (row, col) = self.editing_position(self.cursor);
         
         let current_line = &self.lines[row];
 
@@ -285,12 +301,8 @@ impl Buffer {
             self.cursor = Cursor(row, col)
         }
 
-        if highlight {
-            if let Some(selection) = &mut self.selection {
-                selection.p2 = (self.cursor.0, self.cursor.1);
-            } else {
-                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
-            }
+        if highlight { 
+            self.update_selection(p1, (self.cursor.0, self.cursor.1));
         } else {
             self.selection = None;
         }
@@ -298,9 +310,7 @@ impl Buffer {
 
     pub fn move_left(&mut self, highlight: bool) {
         let p1 = (self.cursor.0, self.cursor.1);
-        
-        let row = self.cursor.0;
-        let col = self.cursor.1.clamp(0, self.lines[row].len());
+        let (row, col) = self.editing_position(self.cursor);
 
         if col > 0 {
             self.cursor = Cursor(row, col - 1)
@@ -312,11 +322,7 @@ impl Buffer {
         }
 
         if highlight {
-            if let Some(selection) = &mut self.selection {
-                selection.p2 = (self.cursor.0, self.cursor.1);
-            } else {
-                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
-            }
+            self.update_selection(p1, (self.cursor.0, self.cursor.1))
         } else {
             self.selection = None;
         }
@@ -335,11 +341,7 @@ impl Buffer {
         }
 
         if highlight {
-            if let Some(selection) = &mut self.selection {
-                selection.p2 = (self.cursor.0, self.cursor.1);
-            } else {
-                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
-            }
+            self.update_selection(p1, (self.cursor.0, self.cursor.1))
         } else {
             self.selection = None;
 
@@ -360,11 +362,7 @@ impl Buffer {
         }
 
         if highlight {
-            if let Some(selection) = &mut self.selection {
-                selection.p2 = (self.cursor.0, self.cursor.1);
-            } else {
-                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) });
-            }
+            self.update_selection(p1, (self.cursor.0, self.cursor.1));
         } else {
             self.selection = None;
         }
@@ -372,9 +370,7 @@ impl Buffer {
 
     pub fn move_forward_word(&mut self, highlight: bool) {
         let p1 = (self.cursor.0, self.cursor.1);
-        
-        let row = self.cursor.0;
-        let col = self.cursor.1.clamp(0, self.lines[row].len());
+        let (row, col) = self.editing_position(self.cursor);
 
         let line_bounday_regex = Regex::new(r"(\b|$)").unwrap();
 
@@ -385,11 +381,7 @@ impl Buffer {
             self.cursor = Cursor(row, m.start());
 
             if highlight {
-                if let Some(selection) = &mut self.selection {
-                    selection.p2 = (self.cursor.0, self.cursor.1);
-                } else {
-                    self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1)} )
-                }
+                self.update_selection(p1, (self.cursor.0, self.cursor.1))
             } else {
                 self.selection = None;
             }
@@ -405,11 +397,7 @@ impl Buffer {
             }
 
             if highlight {
-                if let Some(selection) = &mut self.selection {
-                    selection.p2 = (self.cursor.0, self.cursor.1);
-                } else {
-                    self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1)} )
-                }
+                self.update_selection(p1, (self.cursor.0, self.cursor.1))
             } else {
                 self.selection = None;
             }
@@ -422,8 +410,7 @@ impl Buffer {
     pub fn move_backward_word(&mut self, highlight: bool) {
         let p1 = (self.cursor.0, self.cursor.1);
 
-        let row = self.cursor.0;
-        let col = self.cursor.1.clamp(0, self.lines[row].len());
+        let (row, col) = self.editing_position(self.cursor);
 
         let line_bounday_regex = Regex::new(r"(\b|$|^)").unwrap();
 
@@ -439,21 +426,17 @@ impl Buffer {
                 self.cursor = Cursor(row, col);
                 return
             }
-        }
-
-        while let Some(m) = matches.next() {
-            if matches.peek().map(|m| m.start() >= col).unwrap_or(false) {
-                self.cursor = Cursor(row, m.start());
-                break
+        } else {
+            while let Some(m) = matches.next() {
+                if matches.peek().map(|m| m.start() >= col).unwrap_or(false) {
+                    self.cursor = Cursor(row, m.start());
+                    break
+                }
             }
         }
 
         if highlight {
-            if let Some(selection) = &mut self.selection {
-                selection.p2 = (self.cursor.0, self.cursor.1);
-            } else {
-                self.selection = Some(BufferRange { p1, p2: (self.cursor.0, self.cursor.1) })
-            }
+            self.update_selection(p1, (self.cursor.0, self.cursor.1))
         } else {
             self.selection = None
         }

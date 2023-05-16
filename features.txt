@@ -1,13 +1,17 @@
-Editing:
+Philosophy: everything is buffer
+    - terminals
+    - find menus
+
+Writing automations, becomes reading these buffers, and doing shit with that info
+    - these potentially enables writing AI that has free access to this information
+
+
 **Movements
   - End of line
   - Beginning of line
   - column aware movements
-    . changing lines shouldn't affect your column position
 
  **Selection
-  - selection along any movement
-
   - selection mode -> cursor mode: good support
     . right arrow, will put the cursor at the end of selection
     . opposite for left arrow
@@ -16,36 +20,29 @@ Editing:
 
 **Copy and Paste
 
-**Indention
-
-**Parenthesis 
+**Plugins
+    - tab: tab and shift tab from a selection
+    - snippet
 
 **Find
-  - find in file
-  - find in project
+    - find in file
+    - find in project
 
 **Multicursor
-  - select next
-  - deselect last selection
-  - insert cursor below and above
+    - select next
+    - deselect last selection
+    - insert cursor below and above
 
 **Language support
-  - show errors
-  - autocomplete
-
-**Autocomplete
-  - snippets
-  - langauge
-  - text automcomplete
+    - show errors
+    - autocomplete
+    - outline view
+    - go to definition
+    - go to references
+    - movements based on code (AST type beat)
 
 **Make it capable
-    - better movements, suited to rust
-    - Langauge support
-    - really good support for running scripts on buffers
-
-    - filtering buffers
-
-    - everything is a buffer
+    - writing scripts that run on buffers, not sure what that means yet
 
     - pull in documentation from the web, with web scrapers
     - can I chat with chatGPT
@@ -59,7 +56,7 @@ Editing:
     - make the ai dream on the text in the file, to create a background
 
     - what if each file has it's own personality, different theme, different background
-    - what if thats imagery, and that whatever is dreampt by stable diffusion
+    - what if that imagery is dreampt by stable diffusion
 
 **Other features/directions
     - Integrate message sequence diagram grapher, edit code directly from a MSD

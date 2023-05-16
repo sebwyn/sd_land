@@ -5,8 +5,6 @@ use winit::dpi::PhysicalPosition;
 
 use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight, BufferRange}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
 
-
-
 pub struct BufferView {
     view: View,
     camera: Camera,
@@ -297,8 +295,6 @@ impl<'a> BufferPass<'a> {
 
 #[derive(Default)]
 pub struct BufferRenderer {
-    background_color: Option<[f32; 3]>,
-
     fonts: HashMap<String, MaterialHandle>,
 
     range_material: Option<MaterialHandle>,
@@ -308,10 +304,6 @@ pub struct BufferRenderer {
 }
 
 impl BufferRenderer {
-    pub fn background(mut self, color: [f32; 3]) -> Self {
-        self.background_color = Some(color); self
-    }
-
     fn create_render_work(vertices: Vec<Vertex>, material: MaterialHandle) -> RenderWork {
         let num_rectangles = vertices.len() / 4;
         let indices = (0..num_rectangles)
@@ -368,7 +360,7 @@ impl Subrenderer for BufferRenderer {
             let range_work = Self::create_render_work(range_vertices, self.range_material.unwrap());
             let cursor_work = Self::create_render_work(cursor_vertices, self.cursor_material.unwrap());
 
-            renderer.submit_work(&[range_work, text_work, cursor_work], self.background_color, Some(&view.view))?;
+            renderer.submit_subrender(&[range_work, text_work, cursor_work], Some(&view.view))?;
         }
 
         Ok(())

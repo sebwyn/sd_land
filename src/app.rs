@@ -11,7 +11,7 @@ use crate::{
     renderer::render_api::Renderer, 
     buffer_system::buffer_on_event, 
     buffer_renderer::{BufferRenderer, BufferView}, 
-    colorscheme::hex_color
+    background_renderer::BackgroundRenderer
 };
 
 use crate::{buffer::Buffer, system::Systems};
@@ -19,13 +19,15 @@ use crate::{buffer::Buffer, system::Systems};
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
-    let buffer_renderer = BufferRenderer::default()
-        .background(hex_color("#000000").unwrap());
+    let buffer_renderer = BufferRenderer::default();
+
+    let background_renderer = BackgroundRenderer::new("/Users/swyngaard/Documents/images/galactic.png")
+        .unwrap();
 
     let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
 
-    let buffer_view = BufferView::new(0, 2800, 0, 3200)
+    let buffer_view = BufferView::new(200, 2600, 0, 3200)
         .font("Roboto Mono")
         .line_height(45f32)
         .font_scale(0.5);
@@ -37,6 +39,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         buffer_view
     ));
 
+    renderer.push_subrenderer(background_renderer);
     renderer.push_subrenderer(buffer_renderer);
     //create the shortcuts
     systems.register_event_systems(buffer_on_event);

@@ -266,7 +266,7 @@ impl Font {
 }
 
 pub fn create_font_material(renderer: &mut RenderApi, font: &Font) -> Result<MaterialHandle, SimpleError> {
-    let texture = Texture::new(renderer.create_texture(font.font_image.clone()).unwrap());
+    let texture = Texture::new(renderer.create_texture(&font.font_image).unwrap());
 
     let text_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/text_shader.wgsl"))?;
     let pipeline_handle = renderer.create_pipeline(text_pipeline);

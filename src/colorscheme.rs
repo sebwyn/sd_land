@@ -64,16 +64,16 @@ pub struct ColorSchemeBuilder {
 impl Default for ColorSchemeBuilder {
     fn default() -> Self {
         Self { 
-            text_color:        "#F64740", 
-            keyword_color:     "#7a28cb", 
-            type_color:        "#ffd952", 
-            function_color:    "#166088", 
-            string_color:      "#4AAD52", 
-            primitive_color:   "#DC2E3F", 
-            property_color:    "#F489FA", 
-            operator_color:    "#FFFFFF", 
-            comment_color:     "#676779", 
-            punctuation_color: "#FFFFFF", 
+            text_color:        "#1C4361", // "#F64740", 
+            keyword_color:     "#C24D28", // "#7a28cb", 
+            type_color:        "#976302", // "#ffd952", 
+            function_color:    "#E3DCBD", // "#166088", 
+            string_color:      "#3B859A", // "#4AAD52", 
+            primitive_color:   "#615A91", // "#DC2E3F", 
+            property_color:    "#293143", // "#F489FA", 
+            operator_color:    "#9BD5CE", // "#FFFFFF", 
+            comment_color:     "#F3A062", // "#676779", 
+            punctuation_color: "#FEC33E", // "#FFFFFF", 
             line_number_color: "#FFFFFF", 
         }
     }

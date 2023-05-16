@@ -38,26 +38,20 @@ pub struct Graphics {
     depth_texture: (wgpu::Texture, wgpu::TextureView, wgpu::Sampler),
 
     current_surface_texture: Option<SurfaceTexture>,
-    command_buffers: Vec<CommandBuffer>, 
+    command_buffers: Vec<CommandBuffer>,
 }
 
 impl Graphics {
-    pub(super) fn begin_render(&mut self, clear_color: Option<[f32; 3]>) -> Result<(), SurfaceError>{
-        let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    pub(super) fn clear_depth(&mut self) ->Result<(), SurfaceError> {
+        let view = self.current_surface_texture
+            .as_ref()
+            .unwrap()
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
-        });
-
-        let load = clear_color.map(|c| {
-            wgpu::LoadOp::Clear(wgpu::Color {
-                r: c[0] as f64,
-                g: c[1] as f64,
-                b: c[2] as f64,
-                a: 1.0f64,
-            })
-        }).unwrap_or(wgpu::LoadOp::Load);
+        });  
 
         {
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -66,7 +60,7 @@ impl Graphics {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load,
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 })],
@@ -82,8 +76,13 @@ impl Graphics {
         }
 
         self.command_buffers.push(encoder.finish());
-        self.current_surface_texture.replace(output);
 
+        Ok(())
+    }
+
+    pub(super) fn begin_render(&mut self/*, clear_color: Option<[f32; 3]>*/) -> Result<(), SurfaceError>{
+        let output = self.surface.get_current_texture()?;
+        self.current_surface_texture.replace(output);
         Ok(())
     }
 
@@ -99,7 +98,8 @@ impl Graphics {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-
+        
+        
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -132,9 +132,9 @@ impl Graphics {
                         view.near(),
                         view.far() 
                     )
+
                 } else {
-                    //set the viewport to be the full screen
-                    render_pass.set_viewport(-1.0, -1.0, 2.0, 2.0, 0.0, 1.0);
+                    render_pass.set_viewport(0.0, 0.0, self.config.width as f32, self.config.height as f32, 0.0, 1.0);
                 }
                 
                 render_pass.set_pipeline(task.pipeline);
@@ -143,8 +143,8 @@ impl Graphics {
                     render_pass.set_bind_group(i as u32, bind_group, &[]);
                 }
                 render_pass.set_vertex_buffer(0, task.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(task.index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
-                render_pass.draw_indexed(0..task.num_indices, 0, 0..1); // 2.     
+                render_pass.set_index_buffer(task.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..task.num_indices, 0, 0..1);    
             }
         }
 
@@ -154,7 +154,7 @@ impl Graphics {
     }
 
     pub(super) fn flush(&mut self) {
-        let command_buffers = self.command_buffers.drain(0..).collect::<Vec<_>>();
+        let command_buffers = self.command_buffers.drain(..).collect::<Vec<_>>();
         self.queue.submit(command_buffers);
 
         let surface_texture = self.current_surface_texture.take()
@@ -180,7 +180,7 @@ impl Graphics {
 }
 
 impl Graphics {
-pub(super) fn create_texture<P, S>(&self, image: ImageBuffer<P, S>) -> Result<wgpu::Texture, SimpleError>
+pub(super) fn create_texture<P, S>(&self, image: &ImageBuffer<P, S>) -> Result<wgpu::Texture, SimpleError>
 where 
     P: image::Pixel<Subpixel = u8>,
     S: Deref<Target = [<P as image::Pixel>::Subpixel]>,
@@ -219,7 +219,7 @@ where
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        &image,
+        image,
         wgpu::ImageDataLayout {
             offset: 0,
             bytes_per_row: std::num::NonZeroU32::new(P::CHANNEL_COUNT as u32 * dimensions.0),
