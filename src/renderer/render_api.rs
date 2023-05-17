@@ -100,6 +100,10 @@ impl RenderApi {
         }
     }
 
+    pub fn screen_size(&self) -> (u32, u32) {
+        (self.graphics.size().width, self.graphics.size().height)
+    }
+
     pub fn begin_render(&mut self) -> Result<(), wgpu::SurfaceError> { self.graphics.begin_render()?; Ok(()) }
     pub fn flush(&mut self) { self.graphics.flush(); }
 
@@ -176,7 +180,7 @@ impl RenderApi {
         Ok(uuid)
     }
 
-    pub fn create_sampler(&mut self, ) -> SamplerHandle {
+    pub fn create_sampler(&mut self) -> SamplerHandle {
         let uuid = Uuid::new_v4();
         self.samplers.insert(uuid, self.graphics.create_sampler());
         uuid

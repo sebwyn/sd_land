@@ -27,7 +27,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     let file = env::args().nth(1).expect("Expected a file to be passed!");
     println!("file {}", file);
 
-    let buffer_view = BufferView::new(200, 2600, 0, 3200)
+    let buffer_view = BufferView::new(400, 2800, 0, 3200)
         .font("Roboto Mono")
         .line_height(45f32)
         .font_scale(0.5);
@@ -41,7 +41,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
 
     renderer.push_subrenderer(background_renderer);
     renderer.push_subrenderer(buffer_renderer);
-    //create the shortcuts
+    
     systems.register_event_systems(buffer_on_event);
 }
 
@@ -50,6 +50,7 @@ pub fn run() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_inner_size(PhysicalSize::<u32> { width: 3200, height: 2400 })
+        // .with_decorations(false)
         .build(&event_loop).unwrap();
 
     let mut renderer = Renderer::new(&window);

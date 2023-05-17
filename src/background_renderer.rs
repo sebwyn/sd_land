@@ -12,6 +12,7 @@ use crate::renderer::{
 
 pub struct BackgroundRenderer {
     image_rgba: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    image_size: (u32, u32),
 
     material: Option<MaterialHandle>,
 }
@@ -31,7 +32,25 @@ impl BackgroundRenderer {
 
         let image_rgba = image.to_rgba8();
 
-        Ok(Self { image_rgba, material: None })
+        let image_size = (image_rgba.width(), image_rgba.height());
+
+        Ok(Self { image_rgba, image_size, material: None })
+    }
+
+    fn auto_scale(size: (f32, f32), target_size: (f32, f32)) -> [[f32; 2]; 4] {
+        let height_ratio = target_size.1 / size.1;
+        let width_ratio = target_size.0 / size.0;
+        
+        if height_ratio > width_ratio {
+            let new_width = size.0 * height_ratio;
+            let width_difference = (new_width - target_size.0) / new_width / 2.0;
+
+            [[width_difference, 1.0], [width_difference, 0.0], [1.0 - width_difference, 1.0], [1.0 - width_difference, 0.0]]
+        } else {
+            let new_height = size.1 * width_ratio;
+            let height_difference = (new_height - target_size.1) / new_height / 2.0;
+            [[0.0, 1.0 - height_difference], [0.0, height_difference], [1.0, 1.0 - height_difference], [1.0, height_difference]]
+        }
     }
 }
 
@@ -52,11 +71,17 @@ impl Subrenderer for BackgroundRenderer {
     }
 
     fn render(&mut self, _: &legion::World, renderer: &mut crate::renderer::render_api::RenderApi) -> Result<(), wgpu::SurfaceError> {
+        let screen_size = (renderer.screen_size().0 as f32, renderer.screen_size().1 as f32);
+        let image_size = (self.image_size.0 as f32, self.image_size.1 as f32);
+
+        let tex_coords = Self::auto_scale(image_size, screen_size);
+        
         let vertices = RectangleBuilder::default()
             .position(-1.0, -1.0)
             .size(2.0, 2.0)
             .depth(0.1)
             .opacity(0.1)
+            .tex_coords(tex_coords)
             .build();
 
         let render_work = RenderWork {

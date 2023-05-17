@@ -25,8 +25,15 @@ Writing automations, becomes reading these buffers, and doing shit with that inf
     - snippet
 
 **Find
-    - find in file
+    - aesthetically, move the whole buffer viewport down, and center the find menu
+    - highlight a box around the find where the color indicates how your searching
+    - see how it feels
+    
+    - maybe these colors somewhat align with syntax highlighting
+    - find in file 
     - find in project
+    - symbol search
+    - complex queries
 
 **Multicursor
     - select next
@@ -50,11 +57,12 @@ Writing automations, becomes reading these buffers, and doing shit with that inf
     - What does autoGPT visualization look like, can I view attention
 
 **Make it pretty
-    - background images
+    - background blur??
     - mutable rust variables, have a shader, wobbly affect?
     - animation, 100%, animated selection, animated cursor
-    - make the ai dream on the text in the file, to create a background
+    - highlighting the text in a radius under cursor
 
+    - make the ai dream on the text in the file, to create a background
     - what if each file has it's own personality, different theme, different background
     - what if that imagery is dreampt by stable diffusion
 
