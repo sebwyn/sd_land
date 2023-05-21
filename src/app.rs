@@ -1,3 +1,5 @@
+use std::env;
+
 use legion::{World, Entity};
 use winit::{
     event::*,
@@ -7,7 +9,7 @@ use winit::{
 
 use crate::{
     renderer::render_api::Renderer,
-    background_renderer::BackgroundRenderer, ui_box::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, Transform}
+    background_renderer::BackgroundRenderer, ui_box_renderer::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, Transform, LayoutProvider}, text_renderer::{TextBox, TextRenderer}, buffer_system::buffer_on_event, buffer_renderer::{BufferRenderer, BufferView}, buffer::Buffer
 };
 
 use crate::system::Systems;
@@ -15,11 +17,6 @@ use crate::system::Systems;
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
-    let background_renderer = BackgroundRenderer::new("assets/castle.png")
-        .unwrap();
-
-    let ui_box_renderer = UiBoxRenderer::default();
-
     let preview_box = UiBox { color: hex_color("#FFFFFF").unwrap(), view: None, opacity: 0.2 };
     let preview_layout = Layout::new(DemandedLayout { 
         size: Some([DemandValue::Percent(0.8), DemandValue::Percent(1.0)]), 
@@ -27,14 +24,50 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         depth: Some(0.1), 
         visible: true,
         ..Default::default()
-    });
+    }).child_layout_provider(LayoutProvider::Relative);
+
+    let lorem_text = TextBox { 
+        text: 
+r#"Lorem ipsum dolor sit amet, consectetur adipiscing elit. 
+Sed sit amet dolor id tellus placerat molestie. 
+Proin in auctor elit, vitae volutpat orci. 
+Duis dapibus luctus varius. 
+Vestibulum ut dolor dui. 
+Integer at molestie sapien, in hendrerit tellus. 
+Etiam fringilla ligula at erat sodales, ut elementum lacus porta. 
+Maecenas mollis leo purus, quis tincidunt odio dapibus sed. 
+Suspendisse molestie eleifend risus. 
+In dui erat, pharetra a cursus vel, laoreet id eros. 
+Integer non risus eget sapien eleifend tempus. 
+Sed fermentum efficitur ultrices. 
+Praesent id varius nunc, quis placerat nisl. 
+Duis a purus nec orci sollicitudin accumsan."#.to_string(),
+       text_color: hex_color("#FFFFFF").unwrap(), 
+       line_height: 50f32, 
+       font_scale: 0.6
+    };
+
+    let lorem_text_layout = Layout::new(DemandedLayout { 
+        size: Some([DemandValue::Percent(0.9), DemandValue::Percent(0.5)]),
+        position: Some([DemandValue::Percent(0.05), DemandValue::Percent(0.4)]),
+        depth: Some(0.5),
+        visible: true,
+        ..Default::default()
+     }).parent(&preview_layout);
 
     world.push((Transform::default(), preview_box, preview_layout));
+    world.push((Transform::default(), lorem_text, lorem_text_layout));
+
+    let background_renderer = BackgroundRenderer::new("assets/castle.png").unwrap();
+    let ui_box_renderer = UiBoxRenderer::default();
+    let text_renderer = TextRenderer::new("Roboto Mono").unwrap();
 
     renderer.push_subrenderer(background_renderer);
-    // renderer.push_subrenderer(buffer_renderer);
     renderer.push_subrenderer(ui_box_renderer);
+    renderer.push_subrenderer(text_renderer);
     
+    systems.register_event_systems(buffer_on_event);
+
     // systems.register_event_systems(buffer_on_event);
     systems.register_update_system(crate::layout::layout_on_update);
 }

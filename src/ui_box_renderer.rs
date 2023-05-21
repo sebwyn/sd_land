@@ -53,7 +53,7 @@ impl Subrenderer for UiBoxRenderer {
         
         let num_rectangles = vertices.len() / 4;
         let indices = (0..num_rectangles)
-            .flat_map(|offset| Rectangle::INDICES.map(|i| i + (Rectangle::INDICES.len() * offset) as u32))
+            .flat_map(|offset| Rectangle::INDICES.map(|e| e + (4 * offset) as u32))
             .collect::<Vec<_>>();
         
         let (screen_width, screen_height) = renderer.screen_size();
