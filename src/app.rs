@@ -1,5 +1,3 @@
-use std::env;
-
 use legion::{World, Entity};
 use winit::{
     event::*,
@@ -8,41 +6,37 @@ use winit::{
 };
 
 use crate::{
-    renderer::render_api::Renderer, 
-    buffer_system::buffer_on_event, 
-    buffer_renderer::{BufferRenderer, BufferView}, 
-    background_renderer::BackgroundRenderer
+    renderer::render_api::Renderer,
+    background_renderer::BackgroundRenderer, ui_box::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, Transform}
 };
 
-use crate::{buffer::Buffer, system::Systems};
+use crate::system::Systems;
 
 pub struct EnttRef(pub Entity);
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
-    let buffer_renderer = BufferRenderer::default();
-
-    let background_renderer = BackgroundRenderer::new("/Users/swyngaard/Documents/images/galactic.png")
+    let background_renderer = BackgroundRenderer::new("assets/castle.png")
         .unwrap();
 
-    let file = env::args().nth(1).expect("Expected a file to be passed!");
-    println!("file {}", file);
+    let ui_box_renderer = UiBoxRenderer::default();
 
-    let buffer_view = BufferView::new(400, 2800, 0, 3200)
-        .font("Roboto Mono")
-        .line_height(45f32)
-        .font_scale(0.5);
+    let preview_box = UiBox { color: hex_color("#FFFFFF").unwrap(), view: None, opacity: 0.2 };
+    let preview_layout = Layout::new(DemandedLayout { 
+        size: Some([DemandValue::Percent(0.8), DemandValue::Percent(1.0)]), 
+        position: Some([DemandValue::Percent(0.1), DemandValue::Percent(0f32)]), 
+        depth: Some(0.1), 
+        visible: true,
+        ..Default::default()
+    });
 
-    let buffer = Buffer::load(&file).unwrap();
-
-    world.push((
-        buffer,
-        buffer_view
-    ));
+    world.push((Transform::default(), preview_box, preview_layout));
 
     renderer.push_subrenderer(background_renderer);
-    renderer.push_subrenderer(buffer_renderer);
+    // renderer.push_subrenderer(buffer_renderer);
+    renderer.push_subrenderer(ui_box_renderer);
     
-    systems.register_event_systems(buffer_on_event);
+    // systems.register_event_systems(buffer_on_event);
+    systems.register_update_system(crate::layout::layout_on_update);
 }
 
 pub fn run() {
@@ -56,12 +50,12 @@ pub fn run() {
     let mut renderer = Renderer::new(&window);
     let mut world = World::default();
 
-    let mut systems = Systems::new();
+    let mut systems = Systems::new(window.inner_size());
 
     initialize_world(&mut renderer, &mut world, &mut systems);
 
     event_loop.run(move |event, _, control_flow| {
-        systems.update(&mut world, &event);
+        systems.on_event(&mut world, &event);
 
         match event {
             Event::WindowEvent {
@@ -89,6 +83,8 @@ pub fn run() {
                 _ => {}
             },
             Event::RedrawRequested(_) => {
+                systems.update(&mut world);
+
                 match renderer.render(&world) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => renderer.find_display(),

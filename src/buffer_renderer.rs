@@ -348,9 +348,9 @@ impl Subrenderer for BufferRenderer {
             //update the materials using the camera
             let view_proj_matrix = Matrix::from(view.camera.matrix());
 
-            renderer.update_material(text_material, "view_proj", view_proj_matrix.clone());
-            renderer.update_material(self.range_material.unwrap(), "view_proj", view_proj_matrix.clone());
-            renderer.update_material(self.cursor_material.unwrap(), "view_proj", view_proj_matrix.clone());
+            renderer.update_material(text_material, "view_proj", view_proj_matrix.clone()).unwrap();
+            renderer.update_material(self.range_material.unwrap(), "view_proj", view_proj_matrix.clone()).unwrap();
+            renderer.update_material(self.cursor_material.unwrap(), "view_proj", view_proj_matrix.clone()).unwrap();
 
             let text_vertices = buffer_pass.render_text();
             let range_vertices = buffer_pass.render_buffer_ranges();

@@ -7,7 +7,7 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec4<f32>, 
+    @location(0) color: vec4<f32>,
     @interpolate(linear) @location(1) distance: vec4<f32>,
 };
 
@@ -44,16 +44,15 @@ var<private> distance_colors: array<vec4<f32>, 4> = array<vec4<f32>, 4>(
 );
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    /*var distance = in.distance;
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {    
+    var distance = in.distance;
 
-    let color = vec3<f32>(
+    let opacity = 
         step(0.2,
         smoothstep(1.0, 0.95, distance.b) * 
         smoothstep(1.0, 0.95, distance.r) *
         smoothstep(1.0, 0.95, distance.g) *
-        smoothstep(1.0, 0.95, distance.a))
-    );*/
+        smoothstep(1.0, 0.95, distance.a));
     
-    return in.color;
+    return vec4<f32>(in.color.rgb, in.color.a * opacity);
 }

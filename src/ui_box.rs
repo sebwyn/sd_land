@@ -1,42 +1,75 @@
-use simple_error::SimpleError;
+use legion::{Entity, IntoQuery};
 
 use crate::{renderer::{
     pipeline::Pipeline, 
-    render_api::{RenderApi, MaterialHandle}, 
-    primitive::{RectangleBuilder, Vertex}
-}, colorscheme::hex_color};
+    render_api::{RenderApi, MaterialHandle, Subrenderer, RenderWork}, 
+    primitive::{Vertex, RectangleBuilder, Rectangle}, camera::Camera, shader_types::Matrix
+}, layout::Transform};
 
-pub struct UiBoxFactory {
-    material_handle: MaterialHandle
+pub struct UiBox {
+    pub color: [f32; 3],
+    pub opacity: f32,
+    pub view: Option<Entity>
 }
 
-impl UiBoxFactory {
-    pub fn new(renderer: &mut RenderApi) -> Result<Self, SimpleError> {
-        let pipeline = Pipeline::load::<Vertex>(include_str!("shaders/rect.wgsl"))?;
-        // renderer
-        let pipeline_handle = renderer.create_pipeline(pipeline);
-        let material_handle = renderer.create_material(pipeline_handle)?;
+#[derive(Default)]
+pub struct UiBoxRenderer {
+    material: Option<MaterialHandle>
+}
 
-        Ok(Self {
-            material_handle
-        })
+
+impl UiBoxRenderer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Subrenderer for UiBoxRenderer {
+    fn init(&mut self, renderer: &mut RenderApi) {
+        // renderer
+        let pipeline = Pipeline::load::<Vertex>(include_str!("shaders/rect.wgsl")).unwrap();
+        let pipeline_handle = renderer.create_pipeline(pipeline);
+        self.material = Some(renderer.create_material(pipeline_handle).unwrap());
     }
 
-    pub fn material(&self) -> MaterialHandle { self.material_handle }
-
-    pub fn create(&self, color: &str, position: (f32, f32), size: (f32, f32), depth: f32) 
-        -> Result<Vec<Vertex>, SimpleError> 
-    {
-        //convert a hex color here
-        let color = hex_color(color)?;
+    fn render(&mut self, world: &legion::World, renderer: &mut RenderApi) -> Result<(), wgpu::SurfaceError> {
+        let vertices = 
+            <(&UiBox, &Transform)>::query().iter(world)
+                .filter_map(|(ui_box, transform)| {
+                    if transform.visible {
+                        Some(RectangleBuilder::default()
+                                                .color(ui_box.color)
+                                                .opacity(ui_box.opacity)
+                                                .position(transform.position.0, transform.position.1)
+                                                .size(transform.size.0, transform.size.1)
+                                                .depth(transform.depth)
+                                                .build())
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect::<Vec<_>>();
         
-        let rectangle = RectangleBuilder::default()
-            .position(position.0, position.1)
-            .size(size.0, size.1)
-            .color(color)
-            .depth(depth)
-            .build();
+        let num_rectangles = vertices.len() / 4;
+        let indices = (0..num_rectangles)
+            .flat_map(|offset| Rectangle::INDICES.map(|i| i + (Rectangle::INDICES.len() * offset) as u32))
+            .collect::<Vec<_>>();
+        
+        let (screen_width, screen_height) = renderer.screen_size();
+        let screen_camera = Matrix::from(Camera::new(screen_width, screen_height).matrix());
 
-        Ok(rectangle)
+        let material = self.material.unwrap();
+        renderer.update_material(material, "view_proj", screen_camera).unwrap();
+
+        let work = RenderWork { 
+            vertices, 
+            indices, 
+            material: self.material.unwrap()
+        };
+
+        renderer.submit_subrender(&[work], None)?;
+
+        Ok(())
     }
 }

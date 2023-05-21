@@ -24,6 +24,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(window: &Window) -> Self {
+        
         Self {
             api: RenderApi::new(window),
             subrenderers: Vec::new()
@@ -210,16 +211,16 @@ impl RenderApi {
         Ok(uuid)
     }
 
-    pub fn update_material<T>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> bool 
+    pub fn update_material<T>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> Result<(), SimpleError> 
         where T: 'static + Debug
     {
         if let Some(material) = self.materials.get_mut(&material_handle) {
             if material.cpu_storage.set_uniform(name, value) {
                 material.dirty = true;
-                return true;
+                return Ok(())
             }   
         }
-        false
+        Err(SimpleError::new("Material either does not have that uniform or it is the wrong type"))
     }
 
     fn create_bind_groups(&self, material_handle: &Uuid) -> Result<Vec<wgpu::BindGroup>, SimpleError> {

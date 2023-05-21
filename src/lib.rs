@@ -10,3 +10,4 @@ pub mod colorscheme;
 pub mod buffer_system;
 pub mod buffer_renderer;
 pub mod background_renderer;
+pub mod layout;

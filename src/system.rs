@@ -35,10 +35,13 @@ impl Default for MouseState {
 #[derive(Default)]
 pub struct Systems {
     event_systems: Vec<fn(&mut World, &Event)>,
+    update_systems: Vec<fn(&mut World, &Self)>,
 
     key_modifiers: ModifiersState,
     mouse_position: PhysicalPosition<f64>,
     mouse_state: MouseState,
+
+    screen_size: (f32, f32),
 
     drags: HashMap<MouseButton, MouseDrag>
 }
@@ -118,19 +121,34 @@ pub enum Event {
     MousePress(MouseButton, PhysicalPosition<f64>, ModifiersState),
     MouseMoved(MouseState, PhysicalPosition<f64>, ModifiersState),
     MouseRelease(MouseButton, PhysicalPosition<f64>, ModifiersState),
-    //start, current position, end
     MouseDrag(MouseDrag),
     MouseClick(MouseButton, PhysicalPosition<f64>, ModifiersState),
 }
 
 impl Systems {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(screen_size: PhysicalSize<u32>) -> Self {
+        let screen_size = (screen_size.width as f32, screen_size.height as f32);
+
+        Self {
+            screen_size,
+            ..Default::default()
+        }
     }
 
-    pub fn register_event_systems(&mut self, notify: fn(&mut World, &Event))
-    {
+    pub fn screen_size(&self) -> (f32, f32) { self.screen_size }
+
+    pub fn update(&self, world: &mut World) {
+        for update_system in &self.update_systems {
+            update_system(world, self);
+        }
+    }
+
+    pub fn register_event_systems(&mut self, notify: fn(&mut World, &Event)){
         self.event_systems.push(notify);
+    }
+
+    pub fn register_update_system(&mut self, update: fn(&mut World, &Self)) {
+        self.update_systems.push(update);
     }
 
     fn notify_event_systems(&self, world: &mut World, event: Event)
@@ -140,10 +158,12 @@ impl Systems {
         }
     }
 
-    pub fn update<T>(&mut self, world: &mut World, event: &winit::event::Event<T>) {
+    pub fn on_event<T>(&mut self, world: &mut World, event: &winit::event::Event<T>) {
         if let winit::event::Event::WindowEvent { event, .. } = event {
             match event {
                 winit::event::WindowEvent::Resized(new_size) => {
+                    self.screen_size = (new_size.width as f32, new_size.height as f32);
+
                     let resize = Event::Resize(*new_size);
                     self.notify_event_systems(world, resize);
                 },
