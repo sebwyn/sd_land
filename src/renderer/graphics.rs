@@ -7,7 +7,7 @@ use uuid::Uuid;
 use wgpu::{Instance, Surface, Adapter, Device, Queue, SurfaceConfiguration, Buffer, util::DeviceExt, RenderPipeline, BindGroup, BindGroupLayout, CommandBuffer, SurfaceTexture, SurfaceError};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use super::{primitive::Vertex, pipeline::Pipeline, shader_types::MaterialValue, view::View};
+use super::{pipeline::Pipeline, shader_types::MaterialValue, view::View};
 
 pub struct RenderStage {
     pub order: u32,
@@ -22,8 +22,12 @@ pub struct GraphicsWork<'a> {
     pub(super) pipeline: &'a RenderPipeline,
     pub(super) bind_groups: &'a [BindGroup], 
     pub(super) vertex_buffer: Buffer, 
-    pub(super) index_buffer: Buffer, 
+    pub(super) index_buffer: Buffer,    
     pub(super) num_indices: u32,
+
+    pub(super) instance_buffer: Option<Buffer>,
+    pub(super) num_instances: Option<u32>,
+
     pub(super) view: Option<&'a View>,
 }
 
@@ -99,7 +103,6 @@ impl Graphics {
             label: Some("Render Encoder"),
         });
         
-        
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -142,9 +145,13 @@ impl Graphics {
                 for (i, bind_group) in task.bind_groups.iter().enumerate() {
                     render_pass.set_bind_group(i as u32, bind_group, &[]);
                 }
+
                 render_pass.set_vertex_buffer(0, task.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(task.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..task.num_indices, 0, 0..1);    
+                if let Some(instance_buffer) = task.instance_buffer.as_ref() {
+                    render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+                }
+                render_pass.draw_indexed(0..task.num_indices, 0, 0..task.num_instances.unwrap_or(1));    
             }
         }
 
@@ -376,6 +383,8 @@ pub(super) fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(Cow::from(pipeline.shader())),
     });
+
+    let vertex_buffer_layouts = pipeline.buffer_layouts();
     
     let render_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
@@ -383,7 +392,7 @@ pub(super) fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: pipeline.vs_entry_point(),
-            buffers: pipeline.buffer_layouts(),
+            buffers: &pipeline.buffer_layouts(),
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
@@ -427,7 +436,7 @@ pub(super) fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
     LoadedPipeline { pipeline: render_pipeline, bind_group_layouts: group_and_bind_group_layouts }
 }
 
-pub(super) fn create_vertex_buffer(&self, vertices: &[Vertex]) -> Buffer {
+pub(super) fn create_vertex_buffer<T: bytemuck::Pod>(&self, vertices: &[T]) -> Buffer {
     self.device.create_buffer_init(
         &wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -453,6 +462,16 @@ pub(super) fn create_uniform_buffer(&self, bytes: &[u8]) -> Buffer {
             label: Some("Uniform buffer"),
             contents: bytes,
             usage: wgpu::BufferUsages::UNIFORM,
+        }
+    )
+}
+
+pub(super) fn create_instance_buffer<I: bytemuck::Pod>(&self, instances: &[I]) -> Buffer {
+    self.device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(instances),
+            usage: wgpu::BufferUsages::VERTEX,
         }
     )
 }

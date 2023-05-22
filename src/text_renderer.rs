@@ -2,10 +2,9 @@ use simple_error::SimpleError;
 
 use crate::{
     renderer::{render_api::{Subrenderer, MaterialHandle, RenderWork}, 
-        pipeline::Pipeline, primitive::{Vertex, Rectangle}, 
         camera::Camera, 
-        shader_types::Matrix}, 
-    text::{Font, create_font_texture, create_font_material}, layout::Transform};
+        shader_types::Matrix, primitive::{Rectangle, Vertex}}, 
+    text::{Font, create_font_material}, layout::Transform};
 
 use legion::IntoQuery;
 
@@ -44,10 +43,9 @@ impl Subrenderer for TextRenderer {
         for (transform, text_box) in <(&Transform, &TextBox)>::query().iter(world) {
             
             let mut current_y = transform.position.1 + transform.size.1 - text_box.line_height;
-
             let mut lines = text_box.text.lines();
 
-            while current_y > transform.position.0 {
+            while current_y > transform.position.1 {
                 //get the next line
                 if let Some(current_line) = lines.next() {
                     //render the current line, one character at a time, until its good
@@ -84,10 +82,11 @@ impl Subrenderer for TextRenderer {
         let material = self.material.unwrap();
         renderer.update_material(material, "view_proj", screen_camera).unwrap();
 
-        let work = RenderWork {
+        let work = RenderWork::<Vertex, Rectangle> {
             vertices,
             indices,
             material,
+            instances: None
         };
 
         renderer.submit_subrender(&[work], None).unwrap();

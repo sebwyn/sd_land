@@ -59,13 +59,13 @@ impl Subrenderer for BackgroundRenderer {
         let texture = Texture::new(renderer.create_texture(&self.image_rgba).unwrap());
         let sampler = Sampler::new(renderer.create_sampler());
 
-        let raw_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/background.wgsl")).unwrap();
+        let raw_pipeline = Pipeline::load(include_str!("shaders/background.wgsl")).unwrap().with_vertex::<Vertex>();
 
         let pipeline = renderer.create_pipeline(raw_pipeline);
         let material = renderer.create_material(pipeline).unwrap();
 
-        renderer.update_material(material, "t_diffuse", texture);
-        renderer.update_material(material, "s_diffuse", sampler);
+        renderer.update_material(material, "t_diffuse", texture).unwrap();
+        renderer.update_material(material, "s_diffuse", sampler).unwrap();
     
         self.material = Some(material);
     }
@@ -84,10 +84,11 @@ impl Subrenderer for BackgroundRenderer {
             .tex_coords(tex_coords)
             .build();
 
-        let render_work = RenderWork {
+        let render_work = RenderWork::<Vertex, Rectangle> {
             vertices,
             indices: Rectangle::INDICES.to_vec(),
             material: self.material.unwrap(),
+            instances: None
         };
         
         renderer.submit_subrender(&[render_work], None)

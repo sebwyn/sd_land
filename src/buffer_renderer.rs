@@ -304,7 +304,7 @@ pub struct BufferRenderer {
 }
 
 impl BufferRenderer {
-    fn create_render_work(vertices: Vec<Vertex>, material: MaterialHandle) -> RenderWork {
+    fn create_render_work(vertices: Vec<Vertex>, material: MaterialHandle) -> RenderWork<Vertex, Rectangle> {
         let num_rectangles = vertices.len() / 4;
         let indices = (0..num_rectangles)
             .flat_map(|i| 
@@ -316,6 +316,7 @@ impl BufferRenderer {
             indices,
             vertices,
             material,
+            instances: None
         }
     }
 }
@@ -323,7 +324,7 @@ impl BufferRenderer {
 impl Subrenderer for BufferRenderer {
     fn init(&mut self, renderer: &mut RenderApi) {
         //initialize the font highlight materials
-        let untextured_rectangle_pipeline = Pipeline::load::<Vertex>(include_str!("shaders/rect.wgsl")).unwrap();
+        let untextured_rectangle_pipeline = Pipeline::load(include_str!("shaders/rect.wgsl")).unwrap().with_vertex::<Vertex>();
         let pipeline_handle = renderer.create_pipeline(untextured_rectangle_pipeline);
         let basic_material = renderer.create_material(pipeline_handle).unwrap();
 

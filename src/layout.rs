@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::atomic::AtomicUsize};
 use crate::system::Systems;
-use legion::IntoQuery;
+use legion::{IntoQuery, Entity, component};
 
 pub struct Layout {
     id: usize,
@@ -56,6 +56,9 @@ pub struct DemandedLayout {
     pub vertical_index: Option<u32>,
     pub depth: Option<f32>,
 
+    pub parent_anchor: Option<[Anchor; 2]>,
+    pub child_anchor: Option<[Anchor; 2]>,    
+
     pub visible: bool
 }
 
@@ -73,12 +76,37 @@ pub enum LayoutProvider {
     Custom(fn(parent_layout: &Transform, &[&DemandedLayout]) -> Vec<Transform>)
 }
 
+#[derive(Clone, Debug)]
+pub enum Anchor {
+    Min,
+    Max,
+    Center,
+}
+
+fn point_for_anchor(layout: &Transform, anchor: &[Anchor; 2]) -> (f32, f32) {
+    let x = 
+        match anchor[0] {
+            Anchor::Min => layout.position.0,
+            Anchor::Max => layout.position.0 + layout.size.0,
+            Anchor::Center => layout.position.0 + layout.size.0 / 2.0,
+        };
+
+    let y = 
+        match anchor[1] {
+            Anchor::Min => layout.position.1,
+            Anchor::Max => layout.position.1 + layout.size.1,
+            Anchor::Center => layout.position.1 + layout.size.1 / 2.0,
+        };
+
+    (x, y)
+}
+
 //be extremely kind in respecting childrens demands, but also slow in that the layout will make everything visible
 fn relative_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayout]) -> Vec<Transform> {
     let parent_size = parent_layout.size;
     let parent_position = parent_layout.position;
     
-    let mut provided_layouts = Vec::new();
+    let mut provided_transforms = Vec::new();
 
     for demands in demanded_layouts {
         let size = demands.size.as_ref().map(|[width_demand, height_demand]| {
@@ -94,30 +122,40 @@ fn relative_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayou
             (width, height)
         }).unwrap_or(parent_size);
 
+
+        let anchor_point = point_for_anchor(parent_layout, demands.parent_anchor.as_ref().unwrap_or(&[Anchor::Min, Anchor::Min]));
         
         let position = demands.position.as_ref().map(|[x_demand, y_demand]| {
             let x = match x_demand {
-                DemandValue::Percent(v) => parent_position.0 + parent_size.0 * v,
-                DemandValue::Absolute(v) => parent_position.0 + *v,
+                DemandValue::Percent(v) => anchor_point.0 + parent_size.0 * v,
+                DemandValue::Absolute(v) => anchor_point.0 + *v,
             };
             let y = match y_demand {
-                DemandValue::Percent(v) => parent_position.1 + parent_size.1 * v,
-                DemandValue::Absolute(v) => parent_position.1 + *v,
+                DemandValue::Percent(v) => anchor_point.1 + parent_size.1 * v,
+                DemandValue::Absolute(v) => anchor_point.1 + *v,
             };
 
             (x, y)
-        }).unwrap_or(parent_size);
+        }).unwrap_or(anchor_point);
 
 
-        provided_layouts.push(Transform {
+        let mut transform = Transform {
             position,
             size,
             depth: demands.depth.unwrap_or(0.5),
             visible: demands.visible
-        })
+        };
+
+        let child_anchor_point = point_for_anchor(&transform, demands.child_anchor.as_ref().unwrap_or(&[Anchor::Min, Anchor::Min]));
+        
+        let delta = (child_anchor_point.0 - transform.position.0, child_anchor_point.1 - transform.position.1);
+        transform.position.0 -= delta.0;
+        transform.position.1 -= delta .1;
+
+        provided_transforms.push(transform);
     }
     
-    provided_layouts
+    provided_transforms
 }
 
 //disregards any vertical positioning
@@ -186,7 +224,17 @@ struct LayoutNode<'a> {
 }
 
 pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
-    //iterate the layout structure
+    //add transforms to any layouts that don't have transforms
+    let layouts_without_transforms = <Entity>::query()
+        .filter(component::<Layout>() & !component::<Transform>())
+        .iter(world)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for entity in layouts_without_transforms {
+        world.entry(entity).unwrap().add_component(Transform::default());
+    }
+    
     let layouts = <(&Layout, &mut Transform)>::query()
         .iter_mut(world)
         .map(|(layout, transform)| {

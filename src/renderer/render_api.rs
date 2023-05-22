@@ -11,7 +11,6 @@ use super::{
     pipeline::Pipeline, 
     graphics::Graphics, 
     graphics::{LoadedPipeline, GraphicsWork}, 
-    primitive::Vertex, 
     view::View,
     shader_types::MaterialValue, 
     material::Material
@@ -77,9 +76,11 @@ pub struct RenderApi {
     graphics: Graphics,
 }
 
-pub struct RenderWork {
-    pub vertices: Vec<Vertex>,
+
+pub struct RenderWork<T, I> {
+    pub vertices: Vec<T>,
     pub indices: Vec<u32>,
+    pub instances: Option<Vec<I>>,
     pub material: MaterialHandle
 }
 
@@ -108,15 +109,21 @@ impl RenderApi {
     pub fn begin_render(&mut self) -> Result<(), wgpu::SurfaceError> { self.graphics.begin_render()?; Ok(()) }
     pub fn flush(&mut self) { self.graphics.flush(); }
 
-    pub fn submit_subrender(&mut self, work: &[RenderWork], view: Option<&View>) 
-     -> Result<(), wgpu::SurfaceError> 
+    pub fn submit_subrender<T, I>(&mut self, work: &[RenderWork<T, I>], view: Option<&View>)
+        -> Result<(), wgpu::SurfaceError> 
+    where
+        T: bytemuck::Pod,
+        I: bytemuck::Pod
     {
         self.graphics.clear_depth()?;
 
-        for RenderWork { vertices, indices, material } in work {
+        for RenderWork { vertices, indices, instances, material } in work {
             let vertex_buffer = self.graphics.create_vertex_buffer(vertices);
             let index_buffer = self.graphics.create_index_buffer(indices);
             let num_indices = indices.len() as u32;
+
+            let instance_buffer = instances.as_ref().map(|instances| self.graphics.create_instance_buffer(instances));
+            let num_instances = instances.as_ref().map(|instances| instances.len() as u32);
 
             {
                 let material_info = match self.materials.get(material) {
@@ -146,6 +153,8 @@ impl RenderApi {
                 vertex_buffer,
                 index_buffer,
                 num_indices,
+                instance_buffer,
+                num_instances,
                 view,
             }])?;
         }

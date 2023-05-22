@@ -35,11 +35,14 @@ pub struct Pipeline {
     uniforms: HashMap<String, Uniform>,
     vs_entry_point: String,
     fs_entry_point: String,
-    vertex_buffer_layout: Option<wgpu::VertexBufferLayout<'static>>
+
+    vertex_buffer_layout: Option<wgpu::VertexBufferLayout<'static>>,
+    instance_buffer_layout: Option<wgpu::VertexBufferLayout<'static>>
+
 }
 
 impl Pipeline {
-    pub fn load<T: Vertex>(shader: &str) -> Result<Self, SimpleError> {
+    pub fn load(shader: &str) -> Result<Self, SimpleError> {
         let shader_cource = String::from(shader);
 
         let shader_module = naga::front::wgsl::parse_str(&shader_cource).expect("Failed to load shader!");
@@ -62,7 +65,6 @@ impl Pipeline {
 
         let mut uniforms = Self::parse_shader_uniforms(&shader_module)?;
         
-        let vertex_buffer_layout = Some(T::desc());
 
         Self::correct_filterable_samplers(&mut uniforms);
 
@@ -71,8 +73,17 @@ impl Pipeline {
             uniforms,
             vs_entry_point,
             fs_entry_point,
-            vertex_buffer_layout
+            vertex_buffer_layout: None,
+            instance_buffer_layout: None,
         })
+    }
+
+    pub fn with_vertex<T: Vertex>(mut self) -> Self {
+        self.vertex_buffer_layout = Some(T::desc()); self
+    }
+
+    pub fn with_instance<T: Vertex>(mut self) -> Self {
+        self.instance_buffer_layout = Some(T::desc()); self
     }
 
     pub fn bind_groups(&self) -> Vec<Vec<&Uniform>> {
@@ -104,7 +115,7 @@ impl Pipeline {
     pub fn shader(&self) -> &str { &self.shader_source }
     pub fn vs_entry_point(&self) -> &str { &self.vs_entry_point }
     pub fn fs_entry_point(&self) -> &str { &self.fs_entry_point }
-    pub fn buffer_layouts(&self) -> &[VertexBufferLayout] { self.vertex_buffer_layout.as_slice() }
+    pub fn buffer_layouts(&self) -> Vec<VertexBufferLayout> { [self.vertex_buffer_layout.as_slice(), self.instance_buffer_layout.as_slice()].concat() }
 
     fn parse_shader_uniforms(shader_module: &Module) -> Result<HashMap<String, Uniform>, SimpleError> {
         let mut uniforms: HashMap<String, Uniform> = HashMap::new();
