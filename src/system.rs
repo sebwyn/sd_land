@@ -269,7 +269,7 @@ impl Systems {
                     self.mouse_position = *position;
 
                     for (_, drag) in self.drags.iter() {
-                        let mut drag = drag.clone();
+                        let mut drag = *drag;
 
                         if !same_position(drag.current_position, self.mouse_position) {
                             drag.current_position = self.mouse_position;

@@ -128,7 +128,6 @@ fn point_for_anchor(layout: &Transform, anchor: &[Anchor; 2]) -> (f32, f32) {
 //be extremely kind in respecting childrens demands, but also slow in that the layout will make everything visible
 fn relative_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayout]) -> Vec<Transform> {
     let parent_size = parent_layout.size;
-    let parent_position = parent_layout.position;
     
     let mut provided_transforms = Vec::new();
 
@@ -180,59 +179,6 @@ fn relative_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayou
     }
     
     provided_transforms
-}
-
-//disregards any vertical positioning
-fn vertical_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayout]) -> Vec<Transform> {
-    let mut enumerated_layouts = demanded_layouts
-        .iter()
-        .enumerate()
-        .filter_map(|(i, layout)| layout.vertical_index.map(|index| (i, index, layout))
-        )
-        .collect::<Vec<_>>();
-
-    enumerated_layouts.sort_by(|(_, vi1, _), (_, vi2, _)| (*vi1).cmp(vi2));
-
-    let mut current_y = parent_layout.position.1 + parent_layout.size.1;
-
-    let mut transforms = vec![Transform::default(); demanded_layouts.len()];
-
-    for (child_index, _, layout) in enumerated_layouts {
-        let (width, height) = layout.size.as_ref().map(|size| {
-            (
-                match size[0] {
-                    DemandValue::Percent(v) => parent_layout.size.0 * v,
-                    DemandValue::Absolute(v) => v,
-                },
-                match size[1] {
-                    DemandValue::Percent(v) => parent_layout.size.1 * v,
-                    DemandValue::Absolute(v) => v,
-                }
-            )
-        }).unwrap_or((0f32, 0f32));
-
-        let x_position = layout.position.as_ref().map(|p| 
-            match p[0] {
-                DemandValue::Percent(v) => parent_layout.position.0 + parent_layout.size.0 * v,
-                DemandValue::Absolute(v) => parent_layout.position.0 + v,
-            }
-        ).unwrap_or(parent_layout.position.0);
-
-        transforms[child_index] = Transform { 
-            size: (width, height), 
-            position: (x_position, current_y),
-            depth: layout.depth.unwrap_or(parent_layout.depth), 
-            visible: layout.visible
-        };
-
-        current_y -= height;
-
-        if current_y < parent_layout.position.0 {
-            break
-        }
-    }
-
-    transforms
 }
 
 #[derive(Debug)]

@@ -38,7 +38,7 @@ pub struct ColorScheme {
     pub(super) operator_color: [f32; 3],
     pub(super) comment_color: [f32; 3],
     pub(super) punctuation_color: [f32; 3],
-    pub(super) line_number_color: [f32; 3]
+    pub(super) _line_number_color: [f32; 3]
 }
 
 impl Default for ColorScheme {
@@ -92,7 +92,7 @@ impl ColorSchemeBuilder {
             operator_color: hex_color(self.operator_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
             comment_color: hex_color(self.comment_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
             punctuation_color: hex_color(self.punctuation_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
-            line_number_color: hex_color(self.line_number_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
+            _line_number_color: hex_color(self.line_number_color).map_err(|_| SimpleError::new("Invalid hex format!"))?,
         })
     }
 

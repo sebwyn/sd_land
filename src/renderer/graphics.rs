@@ -383,8 +383,6 @@ pub(super) fn load_pipeline(&mut self, pipeline: Pipeline) -> LoadedPipeline {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(Cow::from(pipeline.shader())),
     });
-
-    let vertex_buffer_layouts = pipeline.buffer_layouts();
     
     let render_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
