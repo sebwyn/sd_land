@@ -1,12 +1,12 @@
 use legion::{World, IntoQuery};
 use winit::event::MouseButton;
-use crate::{system::{Event, MouseDrag, Key}, buffer_renderer::BufferView, buffer::{Buffer, BufferRange}};
+use crate::{system::{Event, MouseDrag, Key, Systems}, buffer_renderer::BufferView, buffer::{Buffer, BufferRange}};
 
 #[derive(Clone, Copy)]
 pub struct Cursor(pub usize, pub usize);
 
 
-pub fn buffer_on_event(world: &mut World, event: &Event) {
+pub fn buffer_on_event(event: &Event, world: &mut World, _: &Systems) {
     match event {
         Event::KeyPress(key, modifiers) if !modifiers.logo() && !modifiers.alt() && !modifiers.ctrl() => {
             let character = match key {
@@ -67,7 +67,7 @@ pub fn buffer_on_event(world: &mut World, event: &Event) {
                 _ => {}
             }
         },
-        Event::MouseScroll(scroll, position) => {
+        Event::MouseScroll(scroll, position, _) => {
             for buffer_view in <&mut BufferView>::query().iter_mut(world) {
                 if buffer_view.contains(position) {
                     buffer_view.scroll_vertically(scroll.y as f32);

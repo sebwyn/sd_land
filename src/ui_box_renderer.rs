@@ -6,14 +6,28 @@ use crate::{renderer::{
     primitive::{Rectangle, RectangleVertex}, camera::Camera, shader_types::Matrix
 }, layout::Transform};
 
-#[derive(Default)]
 pub struct UiBox {
     pub color: [f32; 3],
     pub opacity: f32,
 
-    pub border_radius: Option<f32>,
-    pub border_color: Option<[f32; 3]>,
+    pub corner_radius: f32,
+    pub border_color: [f32; 3],
     pub border_width: f32,
+
+    pub image_path: Option<String>,
+}
+
+impl Default for UiBox {
+    fn default() -> Self {
+        Self {
+            color: [0f32; 3], 
+            opacity: 1f32, 
+            corner_radius: 0f32,
+            border_color: [0f32; 3], 
+            border_width: 0f32,
+            image_path: None
+        }
+    }
 }
 
 
@@ -54,7 +68,9 @@ impl Subrenderer for UiBoxRenderer {
                             .color(ui_box.color)
                             .opacity(ui_box.opacity)
                             .depth(transform.depth)
-                            .border_radius(ui_box.border_radius.unwrap_or(0f32));
+                            .corner_radius(ui_box.corner_radius)
+                            .border_width(ui_box.border_width)
+                            .border_color(ui_box.border_color);
 
                         Some(rectangle)
                     } else {

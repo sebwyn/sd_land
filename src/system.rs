@@ -34,7 +34,7 @@ impl Default for MouseState {
 
 #[derive(Default)]
 pub struct Systems {
-    event_systems: Vec<fn(&mut World, &Event)>,
+    event_systems: Vec<fn(&Event, &mut World, &Self)>,
     update_systems: Vec<fn(&mut World, &Self)>,
 
     key_modifiers: ModifiersState,
@@ -46,7 +46,7 @@ pub struct Systems {
     drags: HashMap<MouseButton, MouseDrag>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MouseDrag {
     pub start: PhysicalPosition<f64>,
     pub current_position: PhysicalPosition<f64>,
@@ -54,7 +54,7 @@ pub struct MouseDrag {
     pub finish: Option<PhysicalPosition<f64>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Key {
     Char(char, Option<char>),
     Escape,
@@ -112,10 +112,10 @@ impl Key {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Event {
     Resize(PhysicalSize<u32>),
-    MouseScroll(PhysicalPosition<f64>, PhysicalPosition<f64>),
+    MouseScroll(PhysicalPosition<f64>, PhysicalPosition<f64>, ModifiersState),
     KeyPress(Key, ModifiersState),
     KeyRelease(Key, ModifiersState),
     MousePress(MouseButton, PhysicalPosition<f64>, ModifiersState),
@@ -143,7 +143,7 @@ impl Systems {
         }
     }
 
-    pub fn register_event_systems(&mut self, notify: fn(&mut World, &Event)){
+    pub fn register_event_systems(&mut self, notify: fn(&Event, &mut World, &Self)){
         self.event_systems.push(notify);
     }
 
@@ -154,7 +154,7 @@ impl Systems {
     fn notify_event_systems(&self, world: &mut World, event: Event)
     {
         for event_system in self.event_systems.iter() {
-            event_system(world, &event);
+            event_system(&event, world, self);
         }
     }
 
@@ -175,7 +175,7 @@ impl Systems {
                     delta: winit::event::MouseScrollDelta::PixelDelta( delta), 
                     .. 
                 } => {
-                    let mouse_scroll = Event::MouseScroll(*delta, self.mouse_position);
+                    let mouse_scroll = Event::MouseScroll(*delta, self.mouse_position, self.key_modifiers);
                     self.notify_event_systems(world, mouse_scroll)
                 },
                 winit::event::WindowEvent::KeyboardInput { input, ..  } => {

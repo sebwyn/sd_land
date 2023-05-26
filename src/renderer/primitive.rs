@@ -11,7 +11,10 @@ pub struct Rectangle {
     tex_position: [f32; 2],
     tex_dimensions: [f32; 2],
 
-    border_radius: f32,
+    corner_radius: f32,
+
+    border_width: f32,
+    border_color: [f32; 3],
 
     depth: f32
 }
@@ -85,8 +88,16 @@ impl Rectangle {
         self.depth = depth; self
     }
 
-    pub fn border_radius(mut self, border_radius: f32) -> Self {
-        self.border_radius = border_radius; self
+    pub fn corner_radius(mut self, corner_radius: f32) -> Self {
+        self.corner_radius = corner_radius; self
+    }
+
+    pub fn border_width(mut self, border_width: f32) -> Self {
+        self.border_width = border_width; self
+    }
+
+    pub fn border_color(mut self, border_color: [f32; 3]) -> Self {
+        self.border_color = border_color; self
     }
     
 }
@@ -131,6 +142,16 @@ impl crate::renderer::pipeline::Vertex for Rectangle {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 13]>() as wgpu::BufferAddress,
                     shader_location: 11,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 14]>() as wgpu::BufferAddress,
+                    shader_location: 12,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 17]>() as wgpu::BufferAddress,
+                    shader_location: 13,
                     format: wgpu::VertexFormat::Float32,
                 },
             ],

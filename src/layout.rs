@@ -2,6 +2,21 @@ use std::{collections::BTreeMap, sync::atomic::AtomicUsize};
 use crate::system::Systems;
 use legion::{IntoQuery, Entity, component};
 
+/* 
+    construct a tree, look downwards for building absolute positions from the top to the bottom,
+
+    I think in reality, everything is content based
+
+    Images maybe have desired sizes or at least dimensions,things have minimum dimensions that they support
+    boxes need to be capable of changing size based on the content within them
+
+
+    margin and padding are generally a better way of thinking about layout then a position even if its relative
+ 
+    make some assumptions that things are automatically inserted in a vertical layout
+ */
+
+#[derive(Clone)]
 pub struct Layout {
     id: usize,
     parent: Option<usize>,
@@ -10,6 +25,7 @@ pub struct Layout {
 }
 
 static LAYOUT_INDEX: AtomicUsize = AtomicUsize::new(0);
+
 
 impl Layout {
     pub fn new(demands: DemandedLayout) -> Self {    
@@ -62,7 +78,7 @@ pub struct DemandedLayout {
     pub visible: bool
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Transform {
     pub size: (f32, f32),
     pub position: (f32, f32),
@@ -70,6 +86,14 @@ pub struct Transform {
     pub visible: bool
 }
 
+impl Transform {
+    pub fn contains_point(&self, point: (f32, f32)) -> bool {
+        self.position.0 < point.0 && point.0 < self.position.0 + self.size.0 &&
+        self.position.1 < point.1 && point.1 < self.position.1 + self.size.1
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum LayoutProvider {
     Relative,
     Vertical,
@@ -166,7 +190,7 @@ fn vertical_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayou
         .filter_map(|(i, layout)| layout.vertical_index.map(|index| (i, index, layout))
         )
         .collect::<Vec<_>>();
-            
+
     enumerated_layouts.sort_by(|(_, vi1, _), (_, vi2, _)| (*vi1).cmp(vi2));
 
     let mut current_y = parent_layout.position.1 + parent_layout.size.1;
@@ -211,6 +235,7 @@ fn vertical_layout(parent_layout: &Transform, demanded_layouts: &[&DemandedLayou
     transforms
 }
 
+#[derive(Debug)]
 struct LayoutNode<'a> {
     demands: DemandedLayout,
     provider: Option<&'a LayoutProvider>,
@@ -235,7 +260,7 @@ pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
         world.entry(entity).unwrap().add_component(Transform::default());
     }
     
-    let layouts = <(&Layout, &mut Transform)>::query()
+    let mut layouts = <(&Layout, &mut Transform)>::query()
         .iter_mut(world)
         .map(|(layout, transform)| {
             LayoutNode {
@@ -250,10 +275,10 @@ pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
         })
         .collect::<Vec<_>>();
 
+    layouts.sort_by(|a, b| a.id.cmp(&b.id));
+
     let mut nodes = Vec::new();
-
     let mut root_indices = Vec::new();
-
     let mut parent_id_to_index = BTreeMap::new();
     
     //move the nodes with no parent into the nodes vector
@@ -327,8 +352,9 @@ fn update_layout_for_node(node_index: usize, parent_transform: &Transform, nodes
 
         let transforms = match provider {
             LayoutProvider::Relative => relative_layout(parent_transform, &demanded_layouts),
-            LayoutProvider::Vertical => vertical_layout(parent_transform, &demanded_layouts),
+            // LayoutProvider::Vertical => vertical_layout(parent_transform, &demanded_layouts),
             LayoutProvider::Custom(layout) => layout(parent_transform, &demanded_layouts),
+            LayoutProvider::Vertical => panic!("Vertical layout not supported. Working on it!"),
         };
 
         for (transform, index) in transforms.into_iter().zip(visible_children) {
@@ -338,6 +364,7 @@ fn update_layout_for_node(node_index: usize, parent_transform: &Transform, nodes
         }
     }
 }
+
 
 #[cfg(test)]
 pub(crate) mod layout_test {

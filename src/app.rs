@@ -7,7 +7,7 @@ use winit::{
 
 use crate::{
     renderer::render_api::Renderer,
-    background_renderer::BackgroundRenderer, ui_box_renderer::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, LayoutProvider, Anchor}, text_renderer::{TextBox, TextRenderer}, buffer_system::buffer_on_event
+    background_renderer::BackgroundRenderer, ui_box_renderer::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, LayoutProvider, Anchor}, text_renderer::{TextBox, TextRenderer}, buffer_system::buffer_on_event, ui_event_system::{UserEventListener, text_box_on_key_event, ui_on_event}
 };
 
 use crate::system::Systems;
@@ -18,7 +18,9 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     let preview_box = UiBox { 
         color: hex_color("#FFFFFF").unwrap(),
         opacity: 0.2,
-        border_radius: Some(100f32),
+        corner_radius: 100f32,
+        border_width: 8f32,
+        border_color: [0f32, 0f32, 0f32],
         ..Default::default()
     };
 
@@ -43,7 +45,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         font_scale: 0.8
     };
 
-    let title_layout = Layout::new(DemandedLayout { 
+    let title_layout = Layout::new(DemandedLayout {
         size: Some([
             DemandValue::Percent(0.25), 
             DemandValue::Percent(0.1)
@@ -63,7 +65,7 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         font_scale: 0.6
     };
 
-    let explanation_layout = Layout::new(DemandedLayout { 
+    let explanation_layout = Layout::new(DemandedLayout {
         size: Some([
             DemandValue::Percent(1.0), 
             DemandValue::Percent(0.25)
@@ -74,13 +76,41 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         depth: Some(0.5),
         visible: true,
         ..Default::default()
-     }).parent(&preview_layout);
+    }).parent(&preview_layout);
 
+    let text_box_background = UiBox { 
+        color: hex_color("#222222").unwrap(),
+        ..Default::default()
+    };
+
+    let text_box_layout = Layout::new(DemandedLayout {
+        size: Some([DemandValue::Percent(0.8f32), DemandValue::Absolute(51f32)]),
+        position: Some([
+            DemandValue::Absolute(50f32),
+            DemandValue::Absolute(-200f32),
+        ]),
+        depth: Some(0.5),
+        parent_anchor: Some([Anchor::Min, Anchor::Max]),
+        child_anchor: Some([Anchor::Min, Anchor::Max]),
+        visible: true,
+        ..Default::default()
+    }).parent(&preview_layout);
+
+    let text_box_text = TextBox {
+        text: "".to_string(),
+        text_color: hex_color("#FFFFFF").unwrap(),
+        line_height: 50f32,
+        font_scale: 0.6,
+    };
 
     world.push((preview_box, preview_layout));
     world.push((title_text, title_layout));
     world.push((explanation_text, explanation_layout));
-
+    world.push((text_box_background, text_box_layout.clone()));
+    world.push((text_box_text, text_box_layout, UserEventListener { 
+        on_key_event: Some(text_box_on_key_event), 
+        ..Default::default()
+    }));
 
     let background_renderer = BackgroundRenderer::new("assets/castle.png").unwrap();
     let ui_box_renderer = UiBoxRenderer::default();
@@ -90,9 +120,9 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
     renderer.push_subrenderer(ui_box_renderer);
     renderer.push_subrenderer(text_renderer);
     
-    systems.register_event_systems(buffer_on_event);
-
     // systems.register_event_systems(buffer_on_event);
+
+    systems.register_event_systems(ui_on_event);
     systems.register_update_system(crate::layout::layout_on_update);
 }
 
