@@ -7,14 +7,22 @@ use winit::{
 
 use crate::{
     renderer::render_api::Renderer,
-    background_renderer::BackgroundRenderer, ui_box_renderer::{UiBox, UiBoxRenderer}, colorscheme::hex_color, layout::{Layout, DemandedLayout, DemandValue, LayoutProvider, Anchor}, text_renderer::{TextBox, TextRenderer}, ui_event_system::{UserEventListener, text_box_on_key_event, ui_on_event}
+    background_renderer::BackgroundRenderer, 
+    ui_box_renderer::UiBox, 
+    colorscheme::hex_color, 
+    layout::{Layout, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
+    text_renderer::TextBox, 
+    ui_event_system::{UserEventListener, text_box_on_key_event}, 
+    buffer_renderer::{BufferRenderer, BufferView}, 
+    buffer::Buffer, 
+    buffer_system::buffer_on_event
 };
 
 use crate::system::Systems;
 
 pub struct EnttRef(pub Entity);
 
-fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
+fn _theme_selector_view(world: &mut World) {
     let preview_box = UiBox { 
         color: hex_color("#FFFFFF").unwrap(),
         opacity: 0.2,
@@ -112,18 +120,33 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
         ..Default::default()
     }));
 
-    let background_renderer = BackgroundRenderer::new("assets/castle.png").unwrap();
-    let ui_box_renderer = UiBoxRenderer::default();
-    let text_renderer = TextRenderer::new("Roboto Mono").unwrap();
-
-    renderer.push_subrenderer(background_renderer);
-    renderer.push_subrenderer(ui_box_renderer);
-    renderer.push_subrenderer(text_renderer);
-    
     // systems.register_event_systems(buffer_on_event);
 
-    systems.register_event_systems(ui_on_event);
-    systems.register_update_system(crate::layout::layout_on_update);
+    // let ui_box_renderer = UiBoxRenderer::default();
+    // let text_renderer = TextRenderer::new("assets/fonts/RobotoMono-VariableFont_wght.ttf").unwrap();
+    // renderer.push_subrenderer(ui_box_renderer);
+    // renderer.push_subrenderer(text_renderer);
+
+    // systems.register_event_systems(ui_on_event);
+    // systems.register_update_system(crate::layout::layout_on_update);
+}
+
+
+fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
+
+    let buffer = Buffer::load("src/app.rs").unwrap();
+    let buffer_view = BufferView::new(200, 2800, 0, 2400)
+        .font("assets/fonts/RobotoMono-VariableFont_wght.ttf")
+        .line_height(50f32);
+
+    world.push((buffer, buffer_view));
+
+    let background_renderer = BackgroundRenderer::new("assets/castle.png").unwrap();
+    renderer.push_subrenderer(background_renderer);
+
+    let buffer_renderer = BufferRenderer::default();
+    renderer.push_subrenderer(buffer_renderer);
+    systems.register_event_systems(buffer_on_event);
 }
 
 pub fn run() {

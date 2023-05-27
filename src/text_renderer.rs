@@ -21,8 +21,8 @@ pub struct TextRenderer {
 }
 
 impl TextRenderer {
-    pub fn new(font_name: &str) -> Result<Self, SimpleError> {
-        let font = Font::load(font_name)?;
+    pub fn new(font_path: &str) -> Result<Self, SimpleError> {
+        let font = Font::load_font(font_path)?;
 
         Ok(Self {
             font,

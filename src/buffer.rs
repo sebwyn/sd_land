@@ -50,10 +50,9 @@ pub struct Buffer {
     pub(super) cursor: Cursor,
     pub(super) selection: Option<BufferRange>,
 
-    rust_highlight_configuration: HighlightConfiguration,
+    pub highlight_configuration: Option<HighlightConfiguration>,
     highlighter: Highlighter,
 
-    pub(super) highlight_enabled: bool,
     pub(super) highlights: Vec<Highlight>,
 }
 
@@ -80,21 +79,36 @@ impl Buffer {
         let lines = source_code.lines().map(|s| s.to_string()).collect::<Vec<_>>();
 
         //generate initial highlights if available
-        let mut highlight_enabled = false;
+        let mut highlight_configuration = None;
+
         if let Some(extension) = file_path.extension() {
-            if extension.to_str().unwrap() == "rs" {
-                highlight_enabled = true
+            let extension = extension.to_str().unwrap();
+
+            match extension {
+                "rs" => {
+                    let mut rust_highlight_configuration = HighlightConfiguration::new(
+                        tree_sitter_rust::language(),
+                        tree_sitter_rust::HIGHLIGHT_QUERY,
+                        "",
+                        ""
+                    ).unwrap();
+                    rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
+                    highlight_configuration = Some(rust_highlight_configuration);
+
+                },
+                "py" => {
+                    let mut python_highlight_configuration = HighlightConfiguration::new(
+                        tree_sitter_python::language(),
+                        tree_sitter_python::HIGHLIGHT_QUERY,
+                        "",
+                        ""
+                    ).unwrap();
+                    python_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
+                    highlight_configuration = Some(python_highlight_configuration);
+                },
+                _ => {}
             }
         };
-
-        let mut rust_highlight_configuration = HighlightConfiguration::new(
-                tree_sitter_rust::language(),
-                tree_sitter_rust::HIGHLIGHT_QUERY,
-                "",
-                "",
-        ).unwrap();
-
-        rust_highlight_configuration.configure(RUST_HIGHLIGHT_NAMES);
 
         let highlighter = Highlighter::new();
 
@@ -109,14 +123,13 @@ impl Buffer {
             cursor,
             selection: None,
 
-            highlight_enabled,
-            rust_highlight_configuration,
+            highlight_configuration,
             highlighter,
 
             highlights: Vec::new()
         };
 
-        if buffer.highlight_enabled { buffer.update_highlights() }
+        if buffer.highlight_configuration.is_some() { buffer.update_highlights() }
 
         Ok(buffer)
     }
@@ -132,35 +145,37 @@ impl Buffer {
     }
 
     pub fn update_highlights(&mut self) {
-        let buffer = self.lines.join("\n");
+        if let Some(highlight_configuration) = &self.highlight_configuration {
+            let buffer = self.lines.join("\n");
 
-        let highlights = self.highlighter.highlight(
-            &self.rust_highlight_configuration, 
-            buffer.as_bytes(), 
-            None, 
-            |_| None).unwrap();
-        
-        self.highlights.clear();
-        
-        let mut currently_no_higlighting = true;
-        for event in highlights {
-            match event.unwrap() {
-                HighlightEvent::Source {start, end} => {
-                    if currently_no_higlighting {
-                        self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
-                    } else {
-                        let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
-                        last_highlight.start_byte = start;
-                        last_highlight.end_byte = end;
-                    }
-                },
-                HighlightEvent::HighlightStart(s) => {
-                    self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
-                    currently_no_higlighting = false;
-                },
-                HighlightEvent::HighlightEnd => {
-                    currently_no_higlighting = true;
-                },
+            let highlights = self.highlighter.highlight(
+                highlight_configuration, 
+                buffer.as_bytes(), 
+                None, 
+                |_| None).unwrap();
+            
+            self.highlights.clear();
+            
+            let mut currently_no_higlighting = true;
+            for event in highlights {
+                match event.unwrap() {
+                    HighlightEvent::Source {start, end} => {
+                        if currently_no_higlighting {
+                            self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
+                        } else {
+                            let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
+                            last_highlight.start_byte = start;
+                            last_highlight.end_byte = end;
+                        }
+                    },
+                    HighlightEvent::HighlightStart(s) => {
+                        self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
+                        currently_no_higlighting = false;
+                    },
+                    HighlightEvent::HighlightEnd => {
+                        currently_no_higlighting = true;
+                    },
+                }
             }
         }
     }
@@ -266,7 +281,7 @@ impl Buffer {
 
         self.cursor = Cursor(current_row, end_column);
 
-        if self.highlight_enabled { self.update_highlights(); }
+        self.update_highlights();
     }
 
     pub fn editing_position(&self, cursor: Cursor) -> (usize, usize) {

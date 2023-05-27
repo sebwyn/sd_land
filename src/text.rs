@@ -45,29 +45,36 @@ impl Font {
 
     pub fn font_height(&self, scale: f32) -> f32 {
         (self.greatest_y - self.smallest_ymin) * scale
-    } 
+    }
 
-    fn load_system_font(name: &str) -> Result<Vec<u8>, SimpleError> {
-        // let fonts = system_fonts::query_all();
-        let font_path = system_fonts::FontPropertyBuilder::new()
-            .family(name)
-            .build()
-            .font_path()
-            .ok_or("Cannot find system font path")?;
-
+    pub fn load_font(font_path: &str) -> Result<Self, SimpleError> {
         let mut font_bytes = Vec::new();
         File::open(font_path)
             .map_err(|_| SimpleError::new("Cannot load font file!"))?
             .read_to_end(&mut font_bytes)
-            .map_err(|_| SimpleError::new("Could not read font file as bytes!"))?;
-
-        Ok(font_bytes)
+            .map_err(|_| SimpleError::new("Coulnt not read font file as bytes!"))?;
+        
+        Self::load(font_path, font_bytes)
     }
 
-    pub fn load(system_font: &str) -> Result<Self, SimpleError> {
-        let font_bytes = Self::load_system_font(system_font)?;
+    pub fn load_system_font(name: &str) -> Result<Self, SimpleError> {
+        let font_property = system_fonts::FontPropertyBuilder::new()
+            .family(name)
+            .build();
+        
+        let (font_bytes, _) = system_fonts::get(&font_property)
+            .ok_or(SimpleError::new("Failed to load font data for system font!"))?;
 
-        let font = fontdue::Font::from_bytes(font_bytes, fontdue::FontSettings::default()).unwrap();
+        Self::load(name, font_bytes)
+    }
+
+    fn load(font_path: &str, font_bytes: Vec<u8>) -> Result<Self, SimpleError> {
+        let font_settings = fontdue::FontSettings {
+            collection_index: 3,
+            scale: 70f32,
+        };
+
+        let font = fontdue::Font::from_bytes(font_bytes, font_settings).unwrap();
 
         let width = 127u32 - 32u32;
 
@@ -127,8 +134,6 @@ impl Font {
                 }
             });
 
-        font_image.save("font.jpg").unwrap();
-
         let mut characters = HashMap::new();
         for (i, (c, metrics, _)) in char_data.into_iter().enumerate() {
             let tex_coords = Self::tex_coords(
@@ -142,7 +147,7 @@ impl Font {
         }
 
         Ok(Self {
-            font_name: system_font.to_string(),
+            font_name: font_path.to_string(),
 
             characters,
             font,

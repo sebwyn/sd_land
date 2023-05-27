@@ -40,14 +40,14 @@ impl BufferView {
 
             line_height: 50f32,
             font_scale: 0.5,
-            font: Font::load(Self::DEFAULT_FONT).unwrap(),
+            font: Font::load_system_font(Self::DEFAULT_FONT).unwrap(),
 
             colorscheme: ColorScheme::default(),
         }
     }
 
-    pub fn font(mut self, font_name: &str) -> Self {
-        self.font = Font::load(font_name).unwrap(); self
+    pub fn font(mut self, font_path: &str) -> Self {
+        self.font = Font::load_font(font_path).unwrap(); self
     }
 
     pub fn font_scale(mut self, font_scale: f32) -> Self {
@@ -159,7 +159,7 @@ impl<'a> BufferPass<'a> {
     #[inline] fn font(&self) -> &Font { &self.buffer_view.font }
     #[inline] fn highlights(&self) -> &[Highlight] { &self.buffer.highlights }
     #[inline] fn colorscheme(&self) -> &ColorScheme { &self.buffer_view.colorscheme }
-    #[inline] fn highlight_enabled(&self) -> bool { self.buffer.highlight_enabled }
+    #[inline] fn highlight_enabled(&self) -> bool { self.buffer.highlight_configuration.is_some() }
    
     #[inline] fn start_y(&self) -> f32 { self.buffer_view.camera.view_top() }
     #[inline] fn end_y(&self) -> f32 { self.buffer_view.camera.view_bottom() }
