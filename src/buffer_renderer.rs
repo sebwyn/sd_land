@@ -1,6 +1,6 @@
 use std::{collections::HashMap};
 
-use legion::{World, IntoQuery, system};
+use legion::system;
 use legion::systems::Builder;
 use winit::dpi::PhysicalPosition;
 
@@ -356,9 +356,9 @@ fn render_buffers(buffer: &Buffer, buffer_view: &BufferView, #[resource] buffer_
     //update the materials using the camera
     let view_proj_matrix = Matrix::from(buffer_view.camera.matrix());
 
-    renderer.update_material(text_material, "view_proj", view_proj_matrix.clone());
-    renderer.update_material(buffer_renderer.range_material, "view_proj", view_proj_matrix.clone());
-    renderer.update_material(buffer_renderer.cursor_material, "view_proj", view_proj_matrix.clone());
+    renderer.update_material(text_material, "view_proj", view_proj_matrix.clone()).unwrap();
+    renderer.update_material(buffer_renderer.range_material, "view_proj", view_proj_matrix.clone()).unwrap();
+    renderer.update_material(buffer_renderer.cursor_material, "view_proj", view_proj_matrix).unwrap();
 
     let text_vertices = buffer_pass.render_text();
     let range_vertices = buffer_pass.render_buffer_ranges();
@@ -368,5 +368,5 @@ fn render_buffers(buffer: &Buffer, buffer_view: &BufferView, #[resource] buffer_
     let range_work = create_render_work(range_vertices, buffer_renderer.range_material);
     let cursor_work = create_render_work(cursor_vertices, buffer_renderer.cursor_material);
 
-    renderer.submit_subrender(&[range_work, text_work, cursor_work], Some(&buffer_view.view));
+    renderer.submit_subrender(&[range_work, text_work, cursor_work], Some(&buffer_view.view)).unwrap();
 }

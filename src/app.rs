@@ -172,8 +172,8 @@ pub fn run() {
 
     world.push((buffer, buffer_view));
 
-    let mut background_renderer = BackgroundRenderer::new("assets/castle.png", &mut renderer).unwrap();
-    let mut buffer_renderer = BufferRenderer::new(&mut renderer);
+    let background_renderer = BackgroundRenderer::new("assets/castle.png", &mut renderer).unwrap();
+    let buffer_renderer = BufferRenderer::new(&mut renderer);
 
     let mut resources = Resources::default();
     resources.insert(renderer);

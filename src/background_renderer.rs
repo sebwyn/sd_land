@@ -1,6 +1,5 @@
 use std::{fs::File, io::Read};
 
-use image::{ImageBuffer, Rgba};
 use legion::system;
 use legion::systems::Builder;
 use simple_error::SimpleError;
@@ -14,7 +13,6 @@ use crate::renderer::{
 use crate::renderer::render_api::RenderApi;
 
 pub struct BackgroundRenderer {
-    image_rgba: ImageBuffer<Rgba<u8>, Vec<u8>>,
     image_size: (u32, u32),
 
     material: MaterialHandle,
@@ -48,7 +46,7 @@ impl BackgroundRenderer {
         renderer.update_material(material, "t_diffuse", texture).unwrap();
         renderer.update_material(material, "s_diffuse", sampler).unwrap();
 
-        Ok(Self { image_rgba, image_size, material })
+        Ok(Self { image_size, material })
     }
 
     fn auto_scale(size: (f32, f32), target_size: (f32, f32)) -> [[f32; 2]; 4] {

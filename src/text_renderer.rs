@@ -6,7 +6,7 @@ use crate::{
         shader_types::Matrix, primitive::{Rectangle, Vertex}},
     text::Font, layout::Transform};
 
-use legion::{IntoQuery, Query, system};
+use legion::{Query, system};
 use legion::world::SubWorld;
 use crate::renderer::pipeline::Pipeline;
 use crate::renderer::render_api::RenderApi;

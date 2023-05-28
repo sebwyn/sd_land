@@ -1,21 +1,7 @@
 use std::{collections::BTreeMap, sync::atomic::AtomicUsize};
-use legion::{IntoQuery, Entity, component, system, Query};
+use legion::{Entity, component, system, Query};
 use legion::systems::CommandBuffer;
 use legion::world::SubWorld;
-
-/* 
-    construct a tree, look downwards for building absolute positions from the top to the bottom,
-
-    I think in reality, everything is content based
-
-    Images maybe have desired sizes or at least dimensions,things have minimum dimensions that they support
-    boxes need to be capable of changing size based on the content within them
-
-
-    margin and padding are generally a better way of thinking about layout then a position even if its relative
- 
-    make some assumptions that things are automatically inserted in a vertical layout
- */
 
 #[derive(Clone)]
 pub struct Element {

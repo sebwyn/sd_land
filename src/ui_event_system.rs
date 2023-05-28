@@ -1,6 +1,6 @@
-use legion::{World, IntoQuery, Entity};
+use legion::{World, Entity};
 
-use crate::{layout::Transform, text_renderer::TextBox};
+use crate::{text_renderer::TextBox};
 use crate::event::{Event, Key};
 
 #[derive(Default)]

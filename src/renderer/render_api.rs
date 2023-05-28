@@ -2,7 +2,6 @@ use std::{collections::HashMap, ops::Deref};
 use core::fmt::Debug;
 
 use image::ImageBuffer;
-use legion::{World};
 use simple_error::SimpleError;
 use uuid::Uuid;
 use winit::{window::Window, dpi::PhysicalSize};
