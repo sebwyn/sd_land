@@ -1,6 +1,7 @@
 use legion::{World, IntoQuery, Entity};
 
-use crate::{layout::Transform, system::{Event, Systems, Key}, text_renderer::TextBox};
+use crate::{layout::Transform, text_renderer::TextBox};
+use crate::event::{Event, Key};
 
 #[derive(Default)]
 pub struct UserEventListener {
@@ -21,47 +22,4 @@ pub fn text_box_on_key_event(event: Event, entity: Entity, world: &mut World) {
         }
     }
     
-}
-
-pub fn ui_on_event(event: &Event, world: &mut World, systems: &Systems) {
-    match event {
-        //keypresses maybe operate off of some kind of 'focus'
-        Event::KeyPress(..) | Event::KeyRelease(..) => {
-            //but for now, have every element react to every keypress
-            //do some kind of accelerated bounds checking against a ton of possible transforms
-            let key_listeners = <(Entity, &UserEventListener)>::query().iter(world)
-                .filter_map(|(entity, listener)| 
-                    listener.on_key_event.map(|key_listener| (*entity, key_listener))
-                )
-                .collect::<Vec<_>>();
-
-            for (entity, listener) in key_listeners {
-                listener(*event, entity, world)
-            }
-        },
-        //mouse events, we need to filter the elements to see if the click was on the element
-        Event::MouseScroll(_, position, _) | Event::MousePress(_, position, _) | 
-        Event::MouseMoved(_, position, _) | Event::MouseRelease(_, position, _) | 
-        Event::MouseClick(_, position, _) => {
-            let screen_size = systems.screen_size();
-            let world_coord = (position.x as f32, screen_size.1 - position.y as f32);
-            //do some kind of accelerated bounds checking against a ton of possible transforms
-            //TODO: make it accelerated
-            let mouse_listeners = <(Entity, &UserEventListener, &Transform)>::query().iter(world)
-                .filter_map(|(entity, listener, transform)| {
-                    listener.on_mouse_event.map(|mouse_listener|
-                    if transform.contains_point(world_coord) {
-                        Some((*entity, mouse_listener))
-                    } else {
-                        None
-                    })?
-                })
-                .collect::<Vec<_>>();
-
-            for (entity, listener) in mouse_listeners {
-                listener(*event, entity, world);
-            }
-        }
-        _ => {}
-    }
 }

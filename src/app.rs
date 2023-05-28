@@ -1,26 +1,26 @@
 use std::env;
 
-use legion::{World, Entity};
+use legion::{World, Entity, Schedule, Resources, system};
 use winit::{
-    event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
 use crate::{
-    renderer::render_api::Renderer,
     background_renderer::BackgroundRenderer, 
     ui_box_renderer::UiBox, 
     colorscheme::hex_color, 
     layout::{Element, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
     text_renderer::TextBox, 
     ui_event_system::{UserEventListener, text_box_on_key_event}, 
-    buffer_renderer::{BufferRenderer, BufferView}, 
-    buffer::Buffer, 
-    buffer_system::buffer_on_event
+    buffer_renderer::{BufferRenderer, BufferView},
+    buffer::Buffer
 };
-
-use crate::system::Systems;
+use crate::background_renderer::add_render_background;
+use crate::buffer_renderer::{add_render_buffers};
+use crate::buffer_system::add_buffer_system;
+use crate::event::{Event, InputState, to_user_event};
+use crate::renderer::render_api::RenderApi;
 
 pub struct EnttRef(pub Entity);
 
@@ -133,8 +133,35 @@ fn _theme_selector_view(world: &mut World) {
     // systems.register_update_system(crate::layout::layout_on_update);
 }
 
+#[derive(PartialEq, Eq)]
+pub enum Command {
+    CloseApp
+}
 
-fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
+#[system]
+fn begin_render(#[resource] render_api: &mut RenderApi, #[resource] commands: &mut Vec<Command>) {
+    match render_api.begin_render() {
+        Ok(_) => {}
+        Err(wgpu::SurfaceError::Lost) => render_api.find_display(),
+        Err(wgpu::SurfaceError::OutOfMemory) => commands.push(Command::CloseApp),
+        Err(e) => eprintln!("{:?}", e),
+    }
+}
+
+#[system]
+fn end_render(#[resource] render_api: &mut RenderApi) {
+    render_api.flush();
+}
+
+pub fn run() {
+    env_logger::init();
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_inner_size(PhysicalSize::<u32> { width: 3200, height: 2400 })
+        .build(&event_loop).unwrap();
+
+    let mut renderer = RenderApi::new(&window);
+    let mut world = World::default();
 
     let file_to_open = env::args().nth(1).unwrap_or("src/app.rs".to_string());
 
@@ -145,68 +172,54 @@ fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Sy
 
     world.push((buffer, buffer_view));
 
-    let background_renderer = BackgroundRenderer::new("assets/castle.png").unwrap();
-    renderer.push_subrenderer(background_renderer);
+    let mut background_renderer = BackgroundRenderer::new("assets/castle.png", &mut renderer).unwrap();
+    let mut buffer_renderer = BufferRenderer::new(&mut renderer);
 
-    let buffer_renderer = BufferRenderer::default();
-    renderer.push_subrenderer(buffer_renderer);
-    systems.register_event_systems(buffer_on_event);
-}
+    let mut resources = Resources::default();
+    resources.insert(renderer);
+    resources.insert(background_renderer);
+    resources.insert(buffer_renderer);
 
-pub fn run() {
-    env_logger::init();
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_inner_size(PhysicalSize::<u32> { width: 3200, height: 2400 })
-        // .with_decorations(false)
-        .build(&event_loop).unwrap();
+    let events: Vec<Event> = Vec::new();
+    let commands: Vec<Command> = Vec::new();
 
-    let mut renderer = Renderer::new(&window);
-    let mut world = World::default();
+    resources.insert(events);
+    resources.insert(commands);
 
-    let mut systems = Systems::new(window.inner_size());
+    let mut schedule_builder = Schedule::builder();
 
-    initialize_world(&mut renderer, &mut world, &mut systems);
+    let mut input_state = InputState::default();
+
+    add_buffer_system(&mut schedule_builder);
+
+    schedule_builder.add_system(begin_render_system());
+    add_render_background(&mut schedule_builder);
+    add_render_buffers(&mut schedule_builder);
+    schedule_builder.add_system(end_render_system());
+
+    let mut schedule = schedule_builder.build();
 
     event_loop.run(move |event, _, control_flow| {
-        systems.on_event(&mut world, &event);
+        let user_events = to_user_event(&event, &mut input_state);
+
+        resources.get_mut::<Vec<Event>>().unwrap().extend(user_events);
 
         match event {
-            Event::WindowEvent {
-                ref event,
+            winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::CloseRequested {},
                 window_id,
-            } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested
-                | WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => *control_flow = ControlFlow::Exit,
+            } if window_id == window.id() => *control_flow = ControlFlow::Exit,
 
-                //game events
-                WindowEvent::Resized(new_size) => { 
-                    renderer.resize(*new_size) 
-                },
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    renderer.resize(**new_inner_size)
-                }
-                _ => {}
-            },
-            Event::RedrawRequested(_) => {
-                systems.update(&mut world);
+            winit::event::Event::RedrawRequested(_) => {
+                schedule.execute(&mut world, &mut resources);
 
-                match renderer.render(&world) {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => renderer.find_display(),
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    Err(e) => eprintln!("{:?}", e),
+                resources.get_mut::<Vec<Event>>().unwrap().clear();
+
+                if resources.get::<Vec<Command>>().unwrap().contains(&Command::CloseApp) {
+                    *control_flow = ControlFlow::Exit;
                 }
             },
-            Event::MainEventsCleared => {
+            winit::event::Event::MainEventsCleared => {
                 window.request_redraw();
             },
             _ => {}

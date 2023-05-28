@@ -16,50 +16,6 @@ use super::{
     material::Material
 };
 
-pub struct Renderer {
-    api: RenderApi,
-    subrenderers: Vec<Box<dyn Subrenderer>>,
-}
-
-impl Renderer {
-    pub fn new(window: &Window) -> Self {
-        
-        Self {
-            api: RenderApi::new(window),
-            subrenderers: Vec::new()
-        }
-    }
-
-    pub fn push_subrenderer<T: Subrenderer + 'static>(&mut self, mut subrenderer: T) {
-        subrenderer.init(&mut self.api);
-        self.subrenderers.push(Box::new(subrenderer))
-    }
-
-    pub fn render(&mut self, world: &World) -> Result<(), wgpu::SurfaceError> {
-        self.api.begin_render()?;
-        for renderer in &mut self.subrenderers {
-            renderer.render(world, &mut self.api)?;
-        }
-        self.api.flush();
-
-        Ok(())
-    }
-
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        self.api.resize(new_size)
-    }
-
-    pub fn find_display(&mut self) {
-        self.api.find_display();
-    }
-}
-
-pub trait Subrenderer {
-    fn init(&mut self, renderer: &mut RenderApi);
-    fn render(&mut self, world: &World, renderer: &mut RenderApi) -> Result<(), wgpu::SurfaceError>;
-}
-
-
 pub struct MaterialInfo {
     pipeline: PipelineHandle,
     cpu_storage: Material,
@@ -75,7 +31,6 @@ pub struct RenderApi {
 
     graphics: Graphics,
 }
-
 
 pub struct RenderWork<T, I> {
     pub vertices: Vec<T>,

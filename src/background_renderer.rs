@@ -1,24 +1,27 @@
 use std::{fs::File, io::Read};
 
 use image::{ImageBuffer, Rgba};
+use legion::system;
+use legion::systems::Builder;
 use simple_error::SimpleError;
 
 use crate::renderer::{
-    render_api::{Subrenderer, MaterialHandle, RenderWork}, 
+    render_api::{MaterialHandle, RenderWork},
     pipeline::Pipeline, 
     primitive::{Vertex, RectangleBuilder, Rectangle}, 
     shader_types::{Texture, Sampler}
 };
+use crate::renderer::render_api::RenderApi;
 
 pub struct BackgroundRenderer {
     image_rgba: ImageBuffer<Rgba<u8>, Vec<u8>>,
     image_size: (u32, u32),
 
-    material: Option<MaterialHandle>,
+    material: MaterialHandle,
 }
 
 impl BackgroundRenderer {
-    pub fn new(image_path: &str) -> Result<Self, SimpleError> {
+    pub fn new(image_path: &str, renderer: &mut RenderApi) -> Result<Self, SimpleError> {
         //load
         let mut image_bytes = Vec::new();
         
@@ -34,7 +37,18 @@ impl BackgroundRenderer {
 
         let image_size = (image_rgba.width(), image_rgba.height());
 
-        Ok(Self { image_rgba, image_size, material: None })
+        let texture = Texture::new(renderer.create_texture(&image_rgba).unwrap());
+        let sampler = Sampler::new(renderer.create_sampler());
+
+        let raw_pipeline = Pipeline::load(include_str!("shaders/background.wgsl")).unwrap().with_vertex::<Vertex>();
+
+        let pipeline = renderer.create_pipeline(raw_pipeline);
+        let material = renderer.create_material(pipeline).unwrap();
+
+        renderer.update_material(material, "t_diffuse", texture).unwrap();
+        renderer.update_material(material, "s_diffuse", sampler).unwrap();
+
+        Ok(Self { image_rgba, image_size, material })
     }
 
     fn auto_scale(size: (f32, f32), target_size: (f32, f32)) -> [[f32; 2]; 4] {
@@ -54,43 +68,29 @@ impl BackgroundRenderer {
     }
 }
 
-impl Subrenderer for BackgroundRenderer {
-    fn init(&mut self, renderer: &mut crate::renderer::render_api::RenderApi) {
-        let texture = Texture::new(renderer.create_texture(&self.image_rgba).unwrap());
-        let sampler = Sampler::new(renderer.create_sampler());
+pub fn add_render_background(schedule: &mut Builder) { schedule.add_system(render_background_system()); }
 
-        let raw_pipeline = Pipeline::load(include_str!("shaders/background.wgsl")).unwrap().with_vertex::<Vertex>();
+#[system]
+pub fn render_background(#[resource] background: &BackgroundRenderer, #[resource] renderer: &mut RenderApi) {
+    let screen_size = (renderer.screen_size().0 as f32, renderer.screen_size().1 as f32);
+    let image_size = (background.image_size.0 as f32, background.image_size.1 as f32);
 
-        let pipeline = renderer.create_pipeline(raw_pipeline);
-        let material = renderer.create_material(pipeline).unwrap();
+    let tex_coords = BackgroundRenderer::auto_scale(image_size, screen_size);
 
-        renderer.update_material(material, "t_diffuse", texture).unwrap();
-        renderer.update_material(material, "s_diffuse", sampler).unwrap();
-    
-        self.material = Some(material);
-    }
+    let vertices = RectangleBuilder::default()
+        .position(-1.0, -1.0)
+        .size(2.0, 2.0)
+        .depth(0.1)
+        .opacity(0.1)
+        .tex_coords(tex_coords)
+        .build();
 
-    fn render(&mut self, _: &legion::World, renderer: &mut crate::renderer::render_api::RenderApi) -> Result<(), wgpu::SurfaceError> {
-        let screen_size = (renderer.screen_size().0 as f32, renderer.screen_size().1 as f32);
-        let image_size = (self.image_size.0 as f32, self.image_size.1 as f32);
+    let render_work = RenderWork::<Vertex, Rectangle> {
+        vertices,
+        indices: Rectangle::INDICES.to_vec(),
+        material: background.material,
+        instances: None
+    };
 
-        let tex_coords = Self::auto_scale(image_size, screen_size);
-        
-        let vertices = RectangleBuilder::default()
-            .position(-1.0, -1.0)
-            .size(2.0, 2.0)
-            .depth(0.1)
-            .opacity(0.1)
-            .tex_coords(tex_coords)
-            .build();
-
-        let render_work = RenderWork::<Vertex, Rectangle> {
-            vertices,
-            indices: Rectangle::INDICES.to_vec(),
-            material: self.material.unwrap(),
-            instances: None
-        };
-        
-        renderer.submit_subrender(&[render_work], None)
-    }
+    renderer.submit_subrender(&[render_work], None).unwrap();
 }

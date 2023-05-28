@@ -1,9 +1,18 @@
 use std::{collections::HashMap};
 
-use legion::{World, IntoQuery};
+use legion::{World, IntoQuery, system};
+use legion::systems::Builder;
 use winit::dpi::PhysicalPosition;
 
-use crate::{renderer::{render_api::{Subrenderer, RenderApi, MaterialHandle, RenderWork}, view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle}, pipeline::Pipeline, shader_types::Matrix}, text::{Font, create_font_material}, buffer::{Buffer, Highlight, BufferRange}, colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type}, buffer_system::Cursor};
+use crate::{
+    renderer::{render_api::{RenderApi, MaterialHandle, RenderWork},
+    view::View, camera::Camera, primitive::{RectangleBuilder, Vertex, Rectangle},
+    pipeline::Pipeline, shader_types::Matrix},
+    text::{Font, create_font_material},
+    buffer::{Buffer, Highlight, BufferRange},
+    colorscheme::{hex_color, ColorScheme, RUST_HIGHLIGHT_NAMES, get_highlight_for_code_type},
+    buffer_system::Cursor
+};
 
 pub struct BufferView {
     view: View,
@@ -294,77 +303,70 @@ impl<'a> BufferPass<'a> {
     }
 }
 
-#[derive(Default)]
+pub fn add_render_buffers(schedule: &mut Builder) { schedule.add_system(render_buffers_system()); }
+
 pub struct BufferRenderer {
     fonts: HashMap<String, MaterialHandle>,
-
-    range_material: Option<MaterialHandle>,
-    cursor_material: Option<MaterialHandle>,
-
-    initialized: bool
+    range_material: MaterialHandle,
+    cursor_material: MaterialHandle
 }
 
 impl BufferRenderer {
-    fn create_render_work(vertices: Vec<Vertex>, material: MaterialHandle) -> RenderWork<Vertex, Rectangle> {
-        let num_rectangles = vertices.len() / 4;
-        let indices = (0..num_rectangles)
-            .flat_map(|i| 
-                Rectangle::INDICES.iter()
-                .map(move |e| *e + (i * 4) as u32))
-            .collect::<Vec<_>>();
-
-        RenderWork {
-            indices,
-            vertices,
-            material,
-            instances: None
-        }
-    }
-}
-
-impl Subrenderer for BufferRenderer {
-    fn init(&mut self, renderer: &mut RenderApi) {
-        //initialize the font highlight materials
+    pub fn new(renderer: &mut RenderApi) -> Self {
         let untextured_rectangle_pipeline = Pipeline::load(include_str!("shaders/rect.wgsl")).unwrap().with_vertex::<Vertex>();
         let pipeline_handle = renderer.create_pipeline(untextured_rectangle_pipeline);
         let basic_material = renderer.create_material(pipeline_handle).unwrap();
 
-        self.cursor_material = Some(basic_material);
-        self.range_material = Some(basic_material);
+        let cursor_material = basic_material;
+        let range_material = basic_material;
 
-        self.initialized = true;
-    }
 
-    fn render(&mut self, world: &World, renderer: &mut RenderApi) -> Result<(), wgpu::SurfaceError> {
-        if !self.initialized {
-            panic!("Rendering a buffer before initializing the buffer renderer!")
+        Self {
+            fonts: HashMap::new(),
+            range_material,
+            cursor_material
         }
-        
-        for (buffer, view) in <(&Buffer, &BufferView)>::query().iter(world) { 
-            let buffer_pass = BufferPass::new(buffer, view);
-
-            let text_material = *(self.fonts.entry(view.font.name().to_string()).or_insert_with(|| {
-                create_font_material(renderer, &view.font).unwrap()
-            }));
-
-            //update the materials using the camera
-            let view_proj_matrix = Matrix::from(view.camera.matrix());
-
-            renderer.update_material(text_material, "view_proj", view_proj_matrix.clone()).unwrap();
-            renderer.update_material(self.range_material.unwrap(), "view_proj", view_proj_matrix.clone()).unwrap();
-            renderer.update_material(self.cursor_material.unwrap(), "view_proj", view_proj_matrix.clone()).unwrap();
-
-            let text_vertices = buffer_pass.render_text();
-            let range_vertices = buffer_pass.render_buffer_ranges();
-            let cursor_vertices = buffer_pass.render_cursors();
-
-            let text_work = Self::create_render_work(text_vertices, text_material);
-            let range_work = Self::create_render_work(range_vertices, self.range_material.unwrap());
-            let cursor_work = Self::create_render_work(cursor_vertices, self.cursor_material.unwrap());
-
-            renderer.submit_subrender(&[range_work, text_work, cursor_work], Some(&view.view))?;
-        }
-
-        Ok(())
     }
+}
+
+fn create_render_work(vertices: Vec<Vertex>, material: MaterialHandle) -> RenderWork<Vertex, Rectangle> {
+    let num_rectangles = vertices.len() / 4;
+    let indices = (0..num_rectangles)
+        .flat_map(|i|
+            Rectangle::INDICES.iter()
+                .map(move |e| *e + (i * 4) as u32))
+        .collect::<Vec<_>>();
+
+    RenderWork {
+        indices,
+        vertices,
+        material,
+        instances: None
+    }
+}
+
+#[system(for_each)]
+fn render_buffers(buffer: &Buffer, buffer_view: &BufferView, #[resource] buffer_renderer: &mut BufferRenderer, #[resource] renderer: &mut RenderApi) {
+    let buffer_pass = BufferPass::new(buffer, buffer_view);
+
+    let text_material = *(buffer_renderer.fonts.entry(buffer_view.font.name().to_string()).or_insert_with(|| {
+        create_font_material(renderer, &buffer_view.font).unwrap()
+    }));
+
+    //update the materials using the camera
+    let view_proj_matrix = Matrix::from(buffer_view.camera.matrix());
+
+    renderer.update_material(text_material, "view_proj", view_proj_matrix.clone());
+    renderer.update_material(buffer_renderer.range_material, "view_proj", view_proj_matrix.clone());
+    renderer.update_material(buffer_renderer.cursor_material, "view_proj", view_proj_matrix.clone());
+
+    let text_vertices = buffer_pass.render_text();
+    let range_vertices = buffer_pass.render_buffer_ranges();
+    let cursor_vertices = buffer_pass.render_cursors();
+
+    let text_work = create_render_work(text_vertices, text_material);
+    let range_work = create_render_work(range_vertices, buffer_renderer.range_material);
+    let cursor_work = create_render_work(cursor_vertices, buffer_renderer.cursor_material);
+
+    renderer.submit_subrender(&[range_work, text_work, cursor_work], Some(&buffer_view.view));
 }

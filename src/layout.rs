@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::atomic::AtomicUsize};
-use crate::system::Systems;
-use legion::{IntoQuery, Entity, component};
+use legion::{IntoQuery, Entity, component, system, Query};
+use legion::systems::CommandBuffer;
+use legion::world::SubWorld;
 
 /* 
     construct a tree, look downwards for building absolute positions from the top to the bottom,
@@ -194,20 +195,16 @@ struct LayoutNode<'a> {
     transform: &'a mut Transform,
 }
 
-pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
-    //add transforms to any layouts that don't have transforms
-    let layouts_without_transforms = <Entity>::query()
-        .filter(component::<Element>() & !component::<Transform>())
-        .iter(world)
-        .cloned()
-        .collect::<Vec<_>>();
+#[system(for_each)]
+#[filter(component::<Element>())]
+#[filter(!component::<Transform>())]
+pub fn insert_transform(entity: &Entity, cmd: &mut CommandBuffer) {
+    cmd.add_component(*entity, Transform::default());
+}
 
-    for entity in layouts_without_transforms {
-        world.entry(entity).unwrap().add_component(Transform::default());
-    }
-    
-    let mut layouts = <(&Element, &mut Transform)>::query()
-        .iter_mut(world)
+#[system]
+pub fn layout_on_update(world: &mut SubWorld, query: &mut Query<(&Element, &mut Transform)>, #[resource] screen_size: &(f32, f32)) {
+    let mut layouts = query.iter_mut(world)
         .map(|(layout, transform)| {
             LayoutNode {
                 id: layout.id,
@@ -260,7 +257,7 @@ pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
     }
 
     //now go and update all the transform based on the screen size
-    let screen_dimensions = systems.screen_size();
+    let screen_dimensions = *screen_size;
     let screen_origin = (0f32, 0f32);
 
     let screen_layout = Transform {
