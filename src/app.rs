@@ -1,15 +1,13 @@
 use std::env;
 
-use legion::{World, Entity, Schedule, Resources, system};
+use legion::{World, Schedule, Resources, system};
 use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
 use crate::{
-    background_renderer::BackgroundRenderer, 
-    ui_box_renderer::UiBox, 
-    colorscheme::hex_color, 
+    background_renderer::BackgroundRenderer,
     layout::{Element, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
     text_renderer::TextBox, 
     ui_event_system::{UserEventListener, text_box_on_key_event}, 
@@ -20,122 +18,30 @@ use crate::background_renderer::add_render_background;
 use crate::buffer_renderer::{add_render_buffers};
 use crate::buffer_system::add_buffer_system;
 use crate::event::{Event, InputState, to_user_event};
+use crate::layout::Transform;
+use crate::renderer::camera::Camera;
 use crate::renderer::render_api::RenderApi;
+use crate::scene_camera::add_scene_camera_controller;
+use crate::sprite_renderer::{ActiveSceneCamera, add_sprite_subrender, Sprite, SpriteRenderer};
 
-pub struct EnttRef(pub Entity);
-
-fn _theme_selector_view(world: &mut World) {
-    let preview_box = UiBox { 
-        color: hex_color("#FFFFFF").unwrap(),
-        opacity: 0.2,
-        corner_radius: 100f32,
-        border_width: 8f32,
-        border_color: [0f32, 0f32, 0f32],
-        ..Default::default()
-    };
-
-    let preview_layout = Element::new(DemandedLayout { 
-        size: Some([
-            DemandValue::Percent(0.8), 
-            DemandValue::Percent(1.0)
-        ]), 
-        position: Some([
-            DemandValue::Percent(0.1), 
-            DemandValue::Percent(0f32)
-        ]), 
-        depth: Some(0.1), 
-        visible: true,
-        ..Default::default()
-    }).child_layout_provider(LayoutProvider::Relative);
-
-    let title_text = TextBox { 
-        text: "Theme Picker".to_string(),
-        text_color: hex_color("#FFFFFF").unwrap(), 
-        line_height: 50f32,
-        font_scale: 0.8
-    };
-
-    let title_layout = Element::new(DemandedLayout {
-        size: Some([
-            DemandValue::Percent(0.25), 
-            DemandValue::Percent(0.1)
-        ]),
-        position: Some([DemandValue::Absolute(0f32), DemandValue::Absolute(-50f32)]),
-        parent_anchor: Some([Anchor::Center, Anchor::Max]),
-        child_anchor: Some([Anchor::Center, Anchor::Max]),
-        depth: Some(0.5),
-        visible: true,
-        ..Default::default()
-     }).parent(&preview_layout);
-
-     let explanation_text = TextBox { 
-        text: "Enter the path to an image to create a theme from:".to_string(),
-        text_color: hex_color("#FFFFFF").unwrap(), 
-        line_height: 50f32,
-        font_scale: 0.6
-    };
-
-    let explanation_layout = Element::new(DemandedLayout {
-        size: Some([
-            DemandValue::Percent(1.0), 
-            DemandValue::Percent(0.25)
-        ]),
-        position: Some([DemandValue::Absolute(50f32), DemandValue::Absolute(-150f32)]),
-        parent_anchor: Some([Anchor::Min, Anchor::Max]),
-        child_anchor: Some([Anchor::Min, Anchor::Max]),
-        depth: Some(0.5),
-        visible: true,
-        ..Default::default()
-    }).parent(&preview_layout);
-
-    let text_box_background = UiBox { 
-        color: hex_color("#222222").unwrap(),
-        ..Default::default()
-    };
-
-    let text_box_layout = Element::new(DemandedLayout {
-        size: Some([DemandValue::Percent(0.8f32), DemandValue::Absolute(51f32)]),
-        position: Some([
-            DemandValue::Absolute(50f32),
-            DemandValue::Absolute(-200f32),
-        ]),
-        depth: Some(0.5),
-        parent_anchor: Some([Anchor::Min, Anchor::Max]),
-        child_anchor: Some([Anchor::Min, Anchor::Max]),
-        visible: true,
-        ..Default::default()
-    }).parent(&preview_layout);
-
-    let text_box_text = TextBox {
-        text: "".to_string(),
-        text_color: hex_color("#FFFFFF").unwrap(),
-        line_height: 50f32,
-        font_scale: 0.6,
-    };
-
-    world.push((preview_box, preview_layout));
-    world.push((title_text, title_layout));
-    world.push((explanation_text, explanation_layout));
-    world.push((text_box_background, text_box_layout.clone()));
-    world.push((text_box_text, text_box_layout, UserEventListener { 
-        on_key_event: Some(text_box_on_key_event), 
-        ..Default::default()
-    }));
-
-    // systems.register_event_systems(buffer_on_event);
-
-    // let ui_box_renderer = UiBoxRenderer::default();
-    // let text_renderer = TextRenderer::new("assets/fonts/RobotoMono-VariableFont_wght.ttf").unwrap();
-    // renderer.push_subrenderer(ui_box_renderer);
-    // renderer.push_subrenderer(text_renderer);
-
-    // systems.register_event_systems(ui_on_event);
-    // systems.register_update_system(crate::layout::layout_on_update);
-}
 
 #[derive(PartialEq, Eq)]
 pub enum Command {
     CloseApp
+}
+
+#[system]
+fn update_screen_size(#[resource] screen_size: &mut (f32, f32), #[resource] events: &Vec<Event>) {
+    events.iter().find_map(|e| -> Option<PhysicalSize<u32>> {
+        if let Event::Resize(new_size) = e {
+            Some(*new_size)
+        } else {
+            None
+        }})
+        .and_then(|new_size| -> Option<()> {
+            *screen_size = (new_size.width as f32, new_size.height as f32);
+            None
+        });
 }
 
 #[system]
@@ -163,42 +69,47 @@ pub fn run() {
     let mut renderer = RenderApi::new(&window);
     let mut world = World::default();
 
-    let file_to_open = env::args().nth(1).unwrap_or("src/app.rs".to_string());
+    let camera = Camera::new(3200, 2400);
+    world.push((camera, ActiveSceneCamera));
 
-    let buffer = Buffer::load(&file_to_open).unwrap();
-    let buffer_view = BufferView::new(200, 2800, 0, 2400)
-        .font("assets/fonts/RobotoMono-VariableFont_wght.ttf")
-        .line_height(50f32);
+    let sprite = Sprite {
+        image_path: "assets/castle.png".to_string(),
+        tex_origin: (0.0, 0.0),
+        tex_dimensions: (1.0, 1.0),
+    };
 
-    world.push((buffer, buffer_view));
+    let sprite_transform = Transform {
+        size: (100.0, 100.0),
+        position: (0.0, 0.0),
+        depth: 0.5,
+        visible: true,
+    };
 
-    let background_renderer = BackgroundRenderer::new("assets/castle.png", &mut renderer).unwrap();
-    let buffer_renderer = BufferRenderer::new(&mut renderer);
+    world.push((sprite, sprite_transform));
+
+    let mut schedule_builder = Schedule::builder();
+
+    schedule_builder.add_system(update_screen_size_system());
+
+    add_scene_camera_controller(&mut schedule_builder);
+
+    schedule_builder.add_system(begin_render_system());
+    add_sprite_subrender(SpriteRenderer::new(&mut renderer).unwrap(), &mut schedule_builder);
+    schedule_builder.add_system(end_render_system());
+
+    let mut schedule = schedule_builder.build();
 
     let mut resources = Resources::default();
     resources.insert(renderer);
-    resources.insert(background_renderer);
-    resources.insert(buffer_renderer);
 
     let events: Vec<Event> = Vec::new();
     let commands: Vec<Command> = Vec::new();
 
     resources.insert(events);
     resources.insert(commands);
-
-    let mut schedule_builder = Schedule::builder();
+    resources.insert((3200f32, 2400f32));
 
     let mut input_state = InputState::default();
-
-    add_buffer_system(&mut schedule_builder);
-
-    schedule_builder.add_system(begin_render_system());
-    add_render_background(&mut schedule_builder);
-    add_render_buffers(&mut schedule_builder);
-    schedule_builder.add_system(end_render_system());
-
-    let mut schedule = schedule_builder.build();
-
     event_loop.run(move |event, _, control_flow| {
         let user_events = to_user_event(&event, &mut input_state);
 

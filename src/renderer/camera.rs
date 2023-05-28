@@ -16,8 +16,8 @@ pub struct Camera {
     up: Vector3<f32>,
     bottom: f32,
     left: f32,
-    width: f32,
-    height: f32
+    pub width: f32,
+    pub height: f32
 }
 
 impl Camera {
@@ -52,7 +52,6 @@ impl Camera {
 
     pub fn matrix(&self) -> cgmath::Matrix4<f32> {
             let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-            // let view = cgmath::Matrix4::identity();
             let proj = cgmath::ortho(
                 self.left, 
                 self.left + self.width, 
