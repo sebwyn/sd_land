@@ -103,13 +103,29 @@ pub fn run() {
     sprite_sheets.insert("Base Character", SpriteSheet::new("assets/sprites/simple_character/character/body.png", 8, 8));
     resources.insert(sprite_sheets);
 
+    let walk_right_frames = (0..6).map(|i| (i, 6)).collect::<Vec<_>>();
+    let walk_right_animation = SpriteAnimation::new_constant_time(
+        Duration::from_millis(135),
+        walk_right_frames);
+
+    let walk_left_frames = (0..6).map(|i| (i, 7)).collect::<Vec<_>>();
+    let walk_left_animation = SpriteAnimation::new_constant_time(
+        Duration::from_millis(135),
+        walk_left_frames.clone());
+
+    let mut run_left_frames = walk_left_frames;
+    let run_frame_times: Vec<Duration> = vec![80, 55, 125, 80, 55, 125].into_iter().map(Duration::from_millis).collect();
+
+    run_left_frames[2].0 = 6;
+    run_left_frames[5].0 = 7;
+
+    let timed_frames = run_frame_times.into_iter().zip(run_left_frames.into_iter()).collect();
+
+    let run_left_animation = SpriteAnimation::new(timed_frames);
+
     for x in 0..8 {
         for y in 0..8 {
-            let frames = (0..6).map(|i| (i, 6 + ((x + y) % 2))).collect::<Vec<_>>();
-
-            let walk_animation = SpriteAnimation::new_constant_time(
-                Duration::from_millis(135),
-                frames);
+            let animation = if x % 2 == 0 { &run_left_animation } else { &walk_right_animation }.clone();
 
             let mut sprite = SpriteSheetSprite::new("Base Character");
 
@@ -122,7 +138,7 @@ pub fn run() {
 
             sprite.set_tile(x, y);
 
-            world.push((sprite, sprite_transform, walk_animation));
+            world.push((sprite, sprite_transform, animation));
         }
     }
 
