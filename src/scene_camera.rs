@@ -11,7 +11,6 @@ pub fn add_scene_camera_controller(schedule: &mut Builder) {
     schedule.add_system(control_camera_system(SceneCameraController::default()));
 }
 
-
 #[derive(Default)]
 struct SceneCameraController {
     starting_position: (f32, f32)

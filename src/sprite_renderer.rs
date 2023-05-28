@@ -6,7 +6,7 @@ use simple_error::SimpleError;
 use crate::layout::Transform;
 use crate::renderer::camera::Camera;
 use crate::renderer::pipeline::Pipeline;
-use crate::renderer::primitive::{Rectangle, RectangleVertex, Vertex};
+use crate::renderer::primitive::{Rectangle, RectangleVertex};
 use crate::renderer::render_api::{MaterialHandle, RenderApi, RenderWork};
 use crate::renderer::shader_types::{Matrix, Sampler, Texture};
 
@@ -58,7 +58,7 @@ fn render_sprites(
 ) {
     let active_camera = <&Camera>::query().filter(component::<ActiveSceneCamera>()).iter(world).next().unwrap();
     let scene_view_proj_matrix = Matrix::from(active_camera.matrix());
-    render_api.update_material(sprite_storage.material, "view_proj", scene_view_proj_matrix.clone()).unwrap();
+    render_api.update_material(sprite_storage.material, "view_proj", scene_view_proj_matrix).unwrap();
 
     let mut sprites_by_image = HashMap::new();
 

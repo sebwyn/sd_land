@@ -1,29 +1,15 @@
-use std::env;
-
 use legion::{World, Schedule, Resources, system};
 use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder, dpi::PhysicalSize,
 };
 
-use crate::{
-    background_renderer::BackgroundRenderer,
-    layout::{Element, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
-    text_renderer::TextBox, 
-    ui_event_system::{UserEventListener, text_box_on_key_event}, 
-    buffer_renderer::{BufferRenderer, BufferView},
-    buffer::Buffer
-};
-use crate::background_renderer::add_render_background;
-use crate::buffer_renderer::{add_render_buffers};
-use crate::buffer_system::add_buffer_system;
 use crate::event::{Event, InputState, to_user_event};
 use crate::layout::Transform;
 use crate::renderer::camera::Camera;
 use crate::renderer::render_api::RenderApi;
 use crate::scene_camera::add_scene_camera_controller;
 use crate::sprite_renderer::{ActiveSceneCamera, add_sprite_subrender, Sprite, SpriteRenderer};
-
 
 #[derive(PartialEq, Eq)]
 pub enum Command {
