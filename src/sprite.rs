@@ -12,47 +12,61 @@ use crate::renderer::shader_types::{Matrix, Sampler, Texture};
 
 pub struct ActiveSceneCamera;
 
-pub struct Sprite {
-    pub sprite_sheet_path: String,
+#[derive(Hash, Clone, PartialEq, Eq)]
+pub struct SpriteSheet {
+    image_path: String,
+    width: u32,
+    height: u32,
+}
 
-    pub sprite_sheet_width: u32,
-    pub sprite_sheet_height: u32,
+impl SpriteSheet {
+    pub fn new(image_path: &str, width: u32, height: u32) -> Self {
+        Self {
+            image_path: image_path.to_string(),
+            width,
+            height,
+        }
+    }
+
+    pub fn tex_coords(&self, mut tile_x: u32, mut tile_y: u32) -> ([f32; 2], [f32; 2]) {
+        tile_x = tile_x.clamp(0, self.width - 1);
+        tile_y = tile_y.clamp(0, self.height - 1);
+
+        let tex_dimensions = [1.0 / self.width as f32, 1.0 / self.height as f32];
+        let tex_origin = [tile_x as f32 * tex_dimensions[0], tile_y as f32 * tex_dimensions[1]];
+
+        (tex_origin, tex_dimensions)
+    }
+
+    pub fn image(&self) -> &str {
+        &self.image_path
+    }
+}
+
+pub struct SpriteSheetSprite {
+    pub sprite_sheet: String,
 
     pub tile_x: u32,
     pub tile_y: u32,
-
     pub smooth_sampler: bool,
 }
 
-impl Sprite {
+impl SpriteSheetSprite {
     //create a sprite from an image
-    pub fn new(image_path: &str) -> Self {
+    pub fn new(sprite_sheet: &str) -> Self {
         Self {
-            sprite_sheet_path: image_path.to_string(),
-            sprite_sheet_width: 1,
-            sprite_sheet_height: 1,
+            sprite_sheet: sprite_sheet.to_string(),
             tile_x: 0,
             tile_y: 0,
             smooth_sampler: false,
         }
     }
 
-    pub fn sprite_sheet_width(mut self, width: u32) -> Self {
-        self.sprite_sheet_width = width;
-        self
-    }
-
-    pub fn sprite_sheet_height(mut self, height: u32) -> Self {
-        self.sprite_sheet_height = height;
-        self
-    }
-
     pub fn set_tile(&mut self, tile_x: u32, tile_y: u32) {
-        self.tile_x = tile_x.clamp(0, self.sprite_sheet_width - 1);
-        self.tile_y = tile_y.clamp(0, self.sprite_sheet_height - 1);
+        self.tile_x = tile_x;
+        self.tile_y = tile_y;
     }
 }
-
 
 pub struct SpriteRenderer {
     images: HashMap<String, Texture>,
@@ -93,8 +107,9 @@ pub fn add_sprite_subrender(sprite_renderer: SpriteRenderer, schedule: &mut Buil
 fn render_sprites(
     #[state] sprite_storage: &mut SpriteRenderer,
     world: &SubWorld,
-    sprite_query: &mut Query<(&Sprite, &Transform)>,
+    sprite_query: &mut Query<(&SpriteSheetSprite, &Transform)>,
     #[resource] render_api: &mut RenderApi,
+    #[resource] spritesheets: &HashMap<&str, SpriteSheet>,
 ) {
     let active_camera = <&Camera>::query().filter(component::<ActiveSceneCamera>()).iter(world).next().unwrap();
     let scene_view_proj_matrix = Matrix::from(active_camera.matrix());
@@ -104,21 +119,23 @@ fn render_sprites(
 
     for (sprite, transform) in sprite_query.iter(world) {
         if transform.visible {
-            let sprites = sprites_by_image.entry((sprite.sprite_sheet_path.as_str(), sprite.smooth_sampler))
-                .or_insert(Vec::new());
+            if let Some(sprite_sheet) = spritesheets.get(sprite.sprite_sheet.as_str()) {
+                let sprites = sprites_by_image.entry((sprite_sheet, sprite.smooth_sampler))
+                    .or_insert(Vec::new());
 
-            sprites.push((sprite, transform));
+                sprites.push((sprite, transform));
+            }
         }
     }
 
     let vertices = Rectangle::VERTICES.to_vec();
     let indices = Rectangle::INDICES.to_vec();
 
-    for ((image_path, smooth_sampling), sprites) in sprites_by_image {
-        let texture = &*sprite_storage.images.entry(image_path.to_string())
+    for ((sprite_sheet, smooth_sampling), sprites) in sprites_by_image {
+        let texture = &*sprite_storage.images.entry(sprite_sheet.image().to_string())
             .or_insert_with(|| {
                 //load the image
-                Texture::new(render_api.load_texture(image_path).unwrap())
+                Texture::new(render_api.load_texture(sprite_sheet.image()).unwrap())
             });
 
         let sampler = if smooth_sampling { &sprite_storage.smooth_sampler } else { &sprite_storage.rough_sampler }.clone();
@@ -128,18 +145,14 @@ fn render_sprites(
 
         let mut instances = Vec::new();
 
-        //now go ahead and render all the sprites
         for (sprite, transform) in sprites {
-            let tex_dimensions = (1.0 / sprite.sprite_sheet_width as f32, 1.0 / sprite.sprite_sheet_height as f32);
-            let adjusted_tile_y = sprite.sprite_sheet_height - 1 - sprite.tile_y;
-            let tex_origin = (sprite.tile_x as f32 * tex_dimensions.0, adjusted_tile_y as f32 * tex_dimensions.1);
+            let (tex_position, tex_dimensions) = sprite_sheet.tex_coords(sprite.tile_x, sprite.tile_y);
 
-            //create a rectangle
             instances.push(Rectangle::default()
                 .position([transform.position.0, transform.position.1])
                 .dimensions([transform.size.0, transform.size.1])
-                .tex_position([tex_origin.0, tex_origin.1])
-                .tex_dimensions([tex_dimensions.0, tex_dimensions.1])
+                .tex_position(tex_position)
+                .tex_dimensions(tex_dimensions)
                 .depth(transform.depth)
                 .color([1.0; 3])
                 .opacity(1.0));

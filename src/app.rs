@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::time::Duration;
 use legion::{system, Resources, Schedule, World};
 use winit::{
     dpi::PhysicalSize,
@@ -11,7 +13,8 @@ use crate::layout::Transform;
 use crate::renderer::camera::Camera;
 use crate::renderer::render_api::RenderApi;
 use crate::scene_camera::add_scene_camera_controller;
-use crate::sprite::{add_sprite_subrender, ActiveSceneCamera, Sprite, SpriteRenderer};
+use crate::sprite::{add_sprite_subrender, ActiveSceneCamera, SpriteRenderer, SpriteSheet, SpriteSheetSprite};
+use crate::sprite_animator::{add_sprite_animation, SpriteAnimation};
 
 #[derive(PartialEq, Eq)]
 pub enum Command {
@@ -64,31 +67,16 @@ pub fn run() {
     let mut renderer = RenderApi::new(&window);
     let mut world = World::default();
 
-    let camera = Camera::new(800, 600);
-    world.push((camera, ActiveSceneCamera));
-
-    let sprite = Sprite::new("assets/sprites/simple_character/character/body.png")
-        .sprite_sheet_width(8)
-        .sprite_sheet_height(8);
-
-    let sprite_transform = Transform {
-        size: (100.0, 100.0),
-        position: (0.0, 0.0),
-        depth: 0.5,
-        visible: true,
-    };
-
-    world.push((sprite, sprite_transform));
-
     let mut schedule_builder = Schedule::builder();
 
     schedule_builder.add_system(update_screen_size_system());
 
     add_scene_camera_controller(&mut schedule_builder);
 
-    let grid_lines = GridLines::new(100f32, 100f32, [0.1, 0.1, 0.1], 2.5f32, &mut renderer);
+    add_sprite_animation(&mut schedule_builder);
 
     schedule_builder.add_system(begin_render_system());
+    let grid_lines = GridLines::new(100f32, 100f32, [0.1, 0.1, 0.1], 2.5f32, &mut renderer);
     add_grid_lines_subrender(grid_lines, &mut schedule_builder);
     add_sprite_subrender(
         SpriteRenderer::new(&mut renderer).unwrap(),
@@ -107,6 +95,37 @@ pub fn run() {
     resources.insert(events);
     resources.insert(commands);
     resources.insert((3200f32, 2400f32));
+
+    let camera = Camera::new(800, 600);
+    world.push((camera, ActiveSceneCamera));
+
+    let mut sprite_sheets = HashMap::new();
+    sprite_sheets.insert("Base Character", SpriteSheet::new("assets/sprites/simple_character/character/body.png", 8, 8));
+    resources.insert(sprite_sheets);
+
+    for x in 0..8 {
+        for y in 0..8 {
+            let frames = (0..6).map(|i| (i, 6 + ((x + y) % 2))).collect::<Vec<_>>();
+
+            let walk_animation = SpriteAnimation::new_constant_time(
+                Duration::from_millis(135),
+                frames);
+
+            let mut sprite = SpriteSheetSprite::new("Base Character");
+
+            let sprite_transform = Transform {
+                size: (100.0, 100.0),
+                position: (100.0 * x as f32, 100.0 * y as f32),
+                depth: 0.5,
+                visible: true,
+            };
+
+            sprite.set_tile(x, y);
+
+            world.push((sprite, sprite_transform, walk_animation));
+        }
+    }
+
 
     let mut input_state = InputState::default();
     event_loop.run(move |event, _, control_flow| {

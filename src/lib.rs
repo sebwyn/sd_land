@@ -20,3 +20,4 @@ pub mod event;
 pub mod sprite;
 pub mod scene_camera;
 pub mod grid_renderer;
+pub mod sprite_animator;
