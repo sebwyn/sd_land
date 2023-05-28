@@ -4,7 +4,7 @@ use legion::systems::Builder;
 use winit::event::MouseButton;
 use crate::event::{Event, MouseDrag};
 use crate::renderer::camera::Camera;
-use crate::sprite_renderer::ActiveSceneCamera;
+use crate::sprite::ActiveSceneCamera;
 
 
 pub fn add_scene_camera_controller(schedule: &mut Builder) {

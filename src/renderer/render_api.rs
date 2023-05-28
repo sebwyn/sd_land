@@ -7,19 +7,19 @@ use uuid::Uuid;
 use winit::{window::Window, dpi::PhysicalSize};
 
 use super::{
-    pipeline::Pipeline, 
-    graphics::Graphics, 
-    graphics::{LoadedPipeline, GraphicsWork}, 
+    pipeline::Pipeline,
+    graphics::Graphics,
+    graphics::{LoadedPipeline, GraphicsWork},
     view::View,
-    shader_types::MaterialValue, 
-    material::Material
+    shader_types::MaterialValue,
+    material::Material,
 };
 
 pub struct MaterialInfo {
     pipeline: PipelineHandle,
     cpu_storage: Material,
     bind_groups: Option<Vec<wgpu::BindGroup>>,
-    dirty: bool
+    dirty: bool,
 }
 
 pub struct RenderApi {
@@ -35,7 +35,7 @@ pub struct RenderWork<T, I> {
     pub vertices: Vec<T>,
     pub indices: Vec<u32>,
     pub instances: Option<Vec<I>>,
-    pub material: MaterialHandle
+    pub material: MaterialHandle,
 }
 
 pub type TextureHandle = Uuid;
@@ -60,14 +60,17 @@ impl RenderApi {
         (self.graphics.size().width, self.graphics.size().height)
     }
 
-    pub fn begin_render(&mut self) -> Result<(), wgpu::SurfaceError> { self.graphics.begin_render()?; Ok(()) }
+    pub fn begin_render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.graphics.begin_render()?;
+        Ok(())
+    }
     pub fn flush(&mut self) { self.graphics.flush(); }
 
     pub fn submit_subrender<T, I>(&mut self, work: &[RenderWork<T, I>], view: Option<&View>)
-        -> Result<(), wgpu::SurfaceError> 
-    where
-        T: bytemuck::Pod,
-        I: bytemuck::Pod
+                                  -> Result<(), wgpu::SurfaceError>
+        where
+            T: bytemuck::Pod,
+            I: bytemuck::Pod
     {
         self.graphics.clear_depth()?;
 
@@ -87,7 +90,7 @@ impl RenderApi {
 
                 if material_info.dirty || material_info.bind_groups.is_none() {
                     let new_bind_groups = Some(self.create_bind_groups(material).unwrap());
-                    
+
                     let material_info = self.materials.get_mut(material).unwrap();
                     material_info.bind_groups = new_bind_groups;
                     material_info.dirty = false;
@@ -134,19 +137,19 @@ impl RenderApi {
         Ok(uuid)
     }
 
-    pub fn create_texture<P, S>(&mut self, image: &ImageBuffer<P, S>) -> Result<TextureHandle, SimpleError> 
-    where 
-        P: image::Pixel<Subpixel = u8>,
-        S: Deref<Target = [<P as image::Pixel>::Subpixel]>,
+    pub fn create_texture<P, S>(&mut self, image: &ImageBuffer<P, S>) -> Result<TextureHandle, SimpleError>
+        where
+            P: image::Pixel<Subpixel=u8>,
+            S: Deref<Target=[<P as image::Pixel>::Subpixel]>,
     {
         let uuid = Uuid::new_v4();
         self.textures.insert(uuid, self.graphics.create_texture(image)?);
         Ok(uuid)
     }
 
-    pub fn create_sampler(&mut self) -> SamplerHandle {
+    pub fn create_sampler(&mut self, filter_mode: wgpu::FilterMode) -> SamplerHandle {
         let uuid = Uuid::new_v4();
-        self.samplers.insert(uuid, self.graphics.create_sampler());
+        self.samplers.insert(uuid, self.graphics.create_sampler(filter_mode));
         uuid
     }
 
@@ -161,7 +164,7 @@ impl RenderApi {
             .as_ref()
             .ok_or(SimpleError::new("Could not find pipeline to create material from!"))?.0;
         let uuid = Uuid::new_v4();
-        
+
         let cpu_storage = pipeline.new_material();
         let material_info = MaterialInfo {
             pipeline: pipeline_handle,
@@ -174,27 +177,27 @@ impl RenderApi {
         Ok(uuid)
     }
 
-    pub fn update_material<T>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> Result<(), SimpleError> 
+    pub fn update_material<T>(&mut self, material_handle: MaterialHandle, name: &str, value: T) -> Result<(), SimpleError>
         where T: 'static + Debug
     {
         if let Some(material) = self.materials.get_mut(&material_handle) {
             if material.cpu_storage.set_uniform(name, value) {
                 material.dirty = true;
-                return Ok(())
-            }   
+                return Ok(());
+            }
         }
         Err(SimpleError::new("Material either does not have that uniform or it is the wrong type"))
     }
 
     fn create_bind_groups(&self, material_handle: &Uuid) -> Result<Vec<wgpu::BindGroup>, SimpleError> {
         let material_info = self.materials.get(material_handle).unwrap();
-        
+
         let uniforms = material_info.cpu_storage.uniforms();
         let bind_group_layouts = &self.pipelines.get(&material_info.pipeline)
             .as_ref()
             .ok_or(SimpleError::new("Could not find pipeline for material"))?
             .1.bind_group_layouts;
-        
+
         let mut texture_views = HashMap::new();
         for (name, _, value) in uniforms.iter() {
             if let MaterialValue::Texture(texture) = value {
@@ -203,12 +206,12 @@ impl RenderApi {
                 let texture_view = self.textures.get(uuid)
                     .ok_or(SimpleError::new(format!("Could not find texture in resources for uniform at: {}", name)))?
                     .create_view(&wgpu::TextureViewDescriptor::default());
-            
+
                 texture_views.insert(*uuid, texture_view);
             }
         }
 
         //layouts, uniforms, textures, samplers
         self.graphics.create_bind_groups(bind_group_layouts, uniforms, &texture_views, &self.samplers)
-    } 
+    }
 }

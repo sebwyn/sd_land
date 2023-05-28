@@ -36,7 +36,7 @@ impl BackgroundRenderer {
         let image_size = (image_rgba.width(), image_rgba.height());
 
         let texture = Texture::new(renderer.create_texture(&image_rgba).unwrap());
-        let sampler = Sampler::new(renderer.create_sampler());
+        let sampler = Sampler::new(renderer.create_sampler(wgpu::FilterMode::Linear));
 
         let raw_pipeline = Pipeline::load(include_str!("shaders/background.wgsl")).unwrap().with_vertex::<Vertex>();
 

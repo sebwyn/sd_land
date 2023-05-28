@@ -289,7 +289,7 @@ impl Font {
 
 pub fn create_font_texture(renderer: &mut RenderApi, font: &Font) -> Result<(Texture, Sampler), SimpleError> {
     let texture = Texture::new(renderer.create_texture(&font.font_image)?);
-    let sampler = Sampler::new(renderer.create_sampler());
+    let sampler = Sampler::new(renderer.create_sampler(wgpu::FilterMode::Linear));
 
     Ok((texture, sampler))
 }
@@ -304,7 +304,7 @@ pub fn create_font_material(renderer: &mut RenderApi, font: &Font) -> Result<Mat
     let material_handle = renderer.create_material(pipeline_handle)?;
     renderer.update_material(material_handle, "t_diffuse", texture).unwrap();
 
-    let sampler = Sampler::new(renderer.create_sampler());
+    let sampler = Sampler::new(renderer.create_sampler(wgpu::FilterMode::Linear));
     renderer.update_material(material_handle, "s_diffuse", sampler).unwrap();
 
     Ok(material_handle)

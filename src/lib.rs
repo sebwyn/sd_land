@@ -17,6 +17,6 @@ pub mod image;
 pub mod ml;
 pub mod theme;
 pub mod event;
-pub mod sprite_renderer;
+pub mod sprite;
 pub mod scene_camera;
 pub mod grid_renderer;

@@ -3,7 +3,7 @@ use crate::renderer::pipeline::Pipeline;
 use crate::renderer::primitive::{Rectangle, RectangleVertex};
 use crate::renderer::render_api::{MaterialHandle, RenderApi, RenderWork};
 use crate::renderer::shader_types::Matrix;
-use crate::sprite_renderer::ActiveSceneCamera;
+use crate::sprite::ActiveSceneCamera;
 use legion::systems::Builder;
 use legion::{component, system};
 
