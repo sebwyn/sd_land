@@ -1,4 +1,4 @@
-use std::{io::Read, fs::File, collections::HashMap, cmp::Ordering};
+use std::{io::Read, fs::File, cmp::Ordering};
 
 use fontdue::Metrics;
 use image::{Luma, ImageBuffer};
@@ -27,10 +27,10 @@ pub struct Bounds {
 pub struct Font {
     font_name: String,
 
-    characters: HashMap<char, (TexCoords, Metrics)>,
+    characters: Vec<Option<(TexCoords, Metrics)>>,
     font: fontdue::Font,
     
-    smallest_ymin: f32,
+    smallest_y_min: f32,
     greatest_y: f32,
 
     font_image: ImageBuffer<Luma<u8>, Vec<u8>>,
@@ -39,12 +39,12 @@ pub struct Font {
 impl Font {
     pub fn name(&self) -> &str { &self.font_name }
 
-    pub fn smallest_ymin(&self, scale: f32) -> f32 {
-        self.smallest_ymin * scale
+    pub fn smallest_y_min(&self, scale: f32) -> f32 {
+        self.smallest_y_min * scale
     }
 
     pub fn font_height(&self, scale: f32) -> f32 {
-        (self.greatest_y - self.smallest_ymin) * scale
+        (self.greatest_y - self.smallest_y_min) * scale
     }
 
     pub fn load_font(font_path: &str) -> Result<Self, SimpleError> {
@@ -95,7 +95,7 @@ impl Font {
             .map(|(_, m, _)| m.width)
             .unwrap() as u32;
 
-        let smallest_ymin = char_data.iter()
+        let smallest_y_min = char_data.iter()
             .min_by(|(_, a, _), (_, b, _)| 
                 a.bounds.ymin.partial_cmp(&b.bounds.ymin)
                     .unwrap_or(Ordering::Equal) 
@@ -134,7 +134,8 @@ impl Font {
                 }
             });
 
-        let mut characters = HashMap::new();
+        let mut characters: Vec<Option<(TexCoords, Metrics)>> = vec![None; 128];
+
         for (i, (c, metrics, _)) in char_data.into_iter().enumerate() {
             let tex_coords = Self::tex_coords(
                 i as u32, 0, 
@@ -143,7 +144,9 @@ impl Font {
                 &metrics
             );
 
-            characters.insert(c, (tex_coords, metrics));
+            let c_ascii = TryInto::<u8>::try_into(c).unwrap() as usize;
+
+            characters[c_ascii] = Some((tex_coords, metrics));
         }
 
         Ok(Self {
@@ -151,7 +154,7 @@ impl Font {
 
             characters,
             font,
-            smallest_ymin,
+            smallest_y_min,
             greatest_y,
             font_image,
         })
@@ -172,8 +175,13 @@ impl Font {
     }
 
     pub fn get_char_pixel_width(&self, c: char, next_c: Option<char>, scale: f32) -> f32 {
-        let (_, metrics) = self.characters.get(&c)
-        .ok_or(SimpleError::new("That character hasn't been loaded in this font!")).unwrap();
+        let c_ascii = TryInto::<u8>::try_into(c).unwrap() as usize;
+
+        let (_, metrics) = self.characters.get(c_ascii)
+            .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))
+            .unwrap()
+            .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))
+            .unwrap();
 
         let mut character_width = scale * metrics.advance_width;
         if let Some(next_c) = next_c {
@@ -195,12 +203,16 @@ impl Font {
     }
 
     pub fn layout_character(&self, c: char, next_char: Option<char>, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(f32, RectangleBuilder), SimpleError> {
-        origin.1 += -self.smallest_ymin * scale;
-        
-        let (tex_coords, metrics) = self.characters.get(&c)
+        origin.1 += -self.smallest_y_min * scale;
+
+        let c_ascii = TryInto::<u8>::try_into(c).unwrap() as usize;
+
+        let (tex_coords, metrics) = self.characters.get(c_ascii)
+                .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?
                 .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?;
-            
-        if metrics.bounds.ymin < self.smallest_ymin {
+
+
+        if metrics.bounds.ymin < self.smallest_y_min {
             panic!("Uh oh!");
         }
 
@@ -213,7 +225,7 @@ impl Font {
         let rectangle = RectangleBuilder::default()
             .position(left, bottom)
             .size(width, height)
-            .tex_coords(*tex_coords)
+            .tex_coords(tex_coords)
             .depth(depth);
 
         if let Some(next_character) = next_char {
@@ -227,17 +239,22 @@ impl Font {
     }
 
     pub fn layout_text(&self, text: &str, mut origin: (f32, f32), scale: f32, depth: f32) -> Result<(Bounds, Vec<RectangleBuilder>), SimpleError> {
-        origin.1 += -self.smallest_ymin * scale;
+        origin.1 += -self.smallest_y_min * scale;
         
         let left = origin.0;
 
         let mut rectangles = Vec::new();
         let characters = text.chars().collect::<Vec<_>>();
         for (i, c) in characters.iter().enumerate() {
-            let (tex_coords, metrics) = self.characters.get(c)
+            let characters = text.chars().collect::<Vec<_>>();
+
+            let c_ascii = TryInto::<u8>::try_into(*c).unwrap() as usize;
+
+            let (tex_coords, metrics) = self.characters.get(c_ascii)
+                .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?
                 .ok_or(SimpleError::new("That character hasn't been loaded in this font!"))?;
-            
-            if metrics.bounds.ymin < self.smallest_ymin {
+
+            if metrics.bounds.ymin < self.smallest_y_min {
                 panic!("Uh oh!");
             }
 
@@ -250,7 +267,7 @@ impl Font {
             rectangles.push(RectangleBuilder::default()
                 .position(left, bottom)
                 .size(width, height)
-                .tex_coords(*tex_coords)
+                .tex_coords(tex_coords)
                 .depth(depth)
             );
 
@@ -265,7 +282,7 @@ impl Font {
 
         let right = origin.0;
 
-        Ok((Bounds { left, right, top: scale * self.greatest_y, bottom: scale * self.smallest_ymin}, rectangles))
+        Ok((Bounds { left, right, top: scale * self.greatest_y, bottom: scale * self.smallest_y_min}, rectangles))
     }
 
 }

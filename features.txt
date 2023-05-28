@@ -35,7 +35,7 @@ Writing automations, becomes reading these buffers, and doing shit with that inf
     - symbol search
     - complex queries
 
-**Multicursor
+**Multi-cursor
     - select next
     - deselect last selection
     - insert cursor below and above

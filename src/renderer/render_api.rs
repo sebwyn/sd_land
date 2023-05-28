@@ -165,7 +165,7 @@ impl RenderApi {
         self.graphics.resize(self.graphics.size());
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.graphics.resize(new_size);
     }
 

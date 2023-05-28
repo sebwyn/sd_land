@@ -13,3 +13,7 @@ pub mod background_renderer;
 pub mod layout;
 pub mod text_renderer;
 pub mod ui_event_system;
+
+pub mod image;
+pub mod ml;
+pub mod theme;

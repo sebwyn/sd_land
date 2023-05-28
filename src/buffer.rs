@@ -156,11 +156,11 @@ impl Buffer {
             
             self.highlights.clear();
             
-            let mut currently_no_higlighting = true;
+            let mut currently_no_highlighting= true;
             for event in highlights {
                 match event.unwrap() {
                     HighlightEvent::Source {start, end} => {
-                        if currently_no_higlighting {
+                        if currently_no_highlighting {
                             self.highlights.push(Highlight { code_type: None, start_byte: start, end_byte: end})
                         } else {
                             let last_highlight = self.highlights.last_mut().expect("Can't find last highlight");
@@ -170,10 +170,10 @@ impl Buffer {
                     },
                     HighlightEvent::HighlightStart(s) => {
                         self.highlights.push(Highlight { code_type: Some(s.0), start_byte: 0, end_byte: 0});
-                        currently_no_higlighting = false;
+                        currently_no_highlighting = false;
                     },
                     HighlightEvent::HighlightEnd => {
-                        currently_no_higlighting = true;
+                        currently_no_highlighting = true;
                     },
                 }
             }
@@ -387,11 +387,11 @@ impl Buffer {
         let p1 = (self.cursor.0, self.cursor.1);
         let (row, col) = self.editing_position(self.cursor);
 
-        let line_bounday_regex = Regex::new(r"(\b|$)").unwrap();
+        let line_boundary_regex = Regex::new(r"(\b|$)").unwrap();
 
         let line_text = &self.lines[row];
         
-        let current_line_match = line_bounday_regex.find_iter(line_text).find(|m| m.start() > col);
+        let current_line_match = line_boundary_regex.find_iter(line_text).find(|m| m.start() > col);
         if let Some(m) = current_line_match {
             self.cursor = Cursor(row, m.start());
 
@@ -402,7 +402,7 @@ impl Buffer {
             }
         } else if let Some(next_line) = self.lines.get(row + 1) {
             if next_line.is_empty() {
-                let next_line_match = line_bounday_regex
+                let next_line_match = line_boundary_regex
                     .find(next_line)
                     .map(|m| m.start())
                     .unwrap_or(0);

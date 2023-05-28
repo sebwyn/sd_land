@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use naga::{ResourceBinding, Module, Handle, GlobalVariable, Expression};
 use simple_error::SimpleError;
-use wgpu::VertexBufferLayout;
+use wgpu::{ShaderStages, VertexBufferLayout};
 
 use super::{shader_types::{create_binding_type, create_uniform_storage}, material::Material};
 
@@ -10,12 +10,12 @@ use super::{shader_types::{create_binding_type, create_uniform_storage}, materia
 pub struct Uniform {
     pub binding: ResourceBinding,
     pub binding_type: wgpu::BindingType,
-    pub visibility: wgpu::ShaderStages,
+    pub visibility: ShaderStages,
     pub naga_type: naga::TypeInner,
 }
 
 impl Uniform {
-    fn new(binding: ResourceBinding, binding_type: wgpu::BindingType, visibility: wgpu::ShaderStages, naga_type: naga::TypeInner) -> Self {
+    fn new(binding: ResourceBinding, binding_type: wgpu::BindingType, visibility: ShaderStages, naga_type: naga::TypeInner) -> Self {
         Self {
             binding,
             binding_type,
@@ -26,7 +26,7 @@ impl Uniform {
 }
 
 pub trait Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
+    fn desc<'a>() -> VertexBufferLayout<'a>;
 }
 
 #[derive(Clone)]
@@ -36,16 +36,16 @@ pub struct Pipeline {
     vs_entry_point: String,
     fs_entry_point: String,
 
-    vertex_buffer_layout: Option<wgpu::VertexBufferLayout<'static>>,
-    instance_buffer_layout: Option<wgpu::VertexBufferLayout<'static>>
+    vertex_buffer_layout: Option<VertexBufferLayout<'static>>,
+    instance_buffer_layout: Option<VertexBufferLayout<'static>>
 
 }
 
 impl Pipeline {
     pub fn load(shader: &str) -> Result<Self, SimpleError> {
-        let shader_cource = String::from(shader);
+        let shader_source = String::from(shader);
 
-        let shader_module = naga::front::wgsl::parse_str(&shader_cource).expect("Failed to load shader!");
+        let shader_module = naga::front::wgsl::parse_str(&shader_source).expect("Failed to load shader!");
 
         let vs_entry_point = shader_module.entry_points.iter()
             .find(|entry_point| entry_point.stage == naga::ShaderStage::Vertex)
@@ -157,16 +157,16 @@ impl Pipeline {
         Ok(uniforms)
     }
 
-    fn get_variable_visibilities(shader_module: &Module) -> HashMap<Handle<GlobalVariable>, wgpu::ShaderStages> {
+    fn get_variable_visibilities(shader_module: &Module) -> HashMap<Handle<GlobalVariable>, ShaderStages> {
         let entry_points = &shader_module.entry_points;
     
-        let mut visibilities = HashMap::new();
+        let mut visibilities: HashMap<Handle<GlobalVariable>, ShaderStages> = HashMap::new();
 
         for entry_point in entry_points {
             let stage = match &entry_point.stage {
-                naga::ShaderStage::Vertex => wgpu::ShaderStages::VERTEX,
-                naga::ShaderStage::Fragment => wgpu::ShaderStages::FRAGMENT,
-                naga::ShaderStage::Compute => wgpu::ShaderStages::COMPUTE,
+                naga::ShaderStage::Vertex => ShaderStages::VERTEX,
+                naga::ShaderStage::Fragment => ShaderStages::FRAGMENT,
+                naga::ShaderStage::Compute => ShaderStages::COMPUTE,
             };
 
             for (_, expr) in entry_point.function.expressions.iter() {
@@ -210,10 +210,10 @@ const ATTRIBS: [wgpu::VertexAttribute; 1] =
         wgpu::vertex_attr_array![0 => Sint32];
 
 impl Vertex for i32 {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+    fn desc<'a>() -> VertexBufferLayout<'a> {
         use std::mem;
 
-        wgpu::VertexBufferLayout {
+        VertexBufferLayout {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &ATTRIBS,

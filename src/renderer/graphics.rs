@@ -92,7 +92,7 @@ impl Graphics {
 
     pub(super) fn render(&mut self, 
         work: Vec<GraphicsWork>,
-    )  -> Result<(), wgpu::SurfaceError> {
+    )  -> Result<(), SurfaceError> {
         
         let view = self.current_surface_texture.as_ref()
             .expect("Render must be called after starting to render")
@@ -170,7 +170,7 @@ impl Graphics {
         surface_texture.present();
     }
 
-    pub(super) fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub(super) fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -229,8 +229,8 @@ where
         image,
         wgpu::ImageDataLayout {
             offset: 0,
-            bytes_per_row: std::num::NonZeroU32::new(P::CHANNEL_COUNT as u32 * dimensions.0),
-            rows_per_image: std::num::NonZeroU32::new(dimensions.1),
+            bytes_per_row: Some(P::CHANNEL_COUNT as u32 * dimensions.0),
+            rows_per_image: Some(dimensions.1),
         },
         texture_size,
     );
@@ -251,11 +251,11 @@ pub(super) fn create_sampler(&self) -> wgpu::Sampler {
 }
 
 pub(super) fn create_bind_groups(&self, 
-        bind_group_layouts: &[(u32, wgpu::BindGroupLayout)], 
+        bind_group_layouts: &[(u32, BindGroupLayout)],
         uniforms: &[(String, (u32, u32), MaterialValue)], 
         textures: &HashMap<Uuid, wgpu::TextureView>,
         samplers: &HashMap<Uuid, wgpu::Sampler>,
-    ) -> Result<Vec<wgpu::BindGroup>, SimpleError> {
+    ) -> Result<Vec<BindGroup>, SimpleError> {
     let mut bind_groups = Vec::new();
     for group_index in 0.. {
         let bind_group_layout = bind_group_layouts.iter().find(|(index, _)| group_index == *index);
@@ -303,7 +303,7 @@ pub(super) fn create_bind_groups(&self,
                 entry
             } else {
                 match value {
-                    super::shader_types::MaterialValue::Texture(texture) => {
+                    MaterialValue::Texture(texture) => {
                         let uuid = &texture.uuid
                             .ok_or(SimpleError::new(&format!("Material was never assigned texture at: {}", name)))?;
                         
@@ -315,7 +315,7 @@ pub(super) fn create_bind_groups(&self,
                             resource: wgpu::BindingResource::TextureView(texture_view),
                         }
                     },
-                    super::shader_types::MaterialValue::Sampler(sampler) => {
+                    MaterialValue::Sampler(sampler) => {
                         let sampler = samplers.get(
                                 &sampler.uuid
                                 .ok_or(SimpleError::new(&format!("Material was never assigned sampler: {}", name)))?
@@ -477,7 +477,7 @@ pub(super) fn create_instance_buffer<I: bytemuck::Pod>(&self, instances: &[I]) -
 pub(super) async fn new(window: &Window) -> Graphics {
     let size = window.inner_size();
 
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::METAL,
         dx12_shader_compiler: Default::default(),
     });
@@ -510,11 +510,11 @@ pub(super) async fn new(window: &Window) -> Graphics {
     let surface_caps = surface.get_capabilities(&adapter);
 
     let surface_format = surface_caps.formats.iter()
-        .find(|f| f.describe().srgb)
+        .find(|f| f.is_srgb())
         .cloned()
         .unwrap_or(surface_caps.formats[0]);
 
-    let config = wgpu::SurfaceConfiguration {
+    let config = SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: surface_format,
         width: size.width,
@@ -543,7 +543,7 @@ pub(super) async fn new(window: &Window) -> Graphics {
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float; // 1.
     
-fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str) 
+fn create_depth_texture(device: &Device, config: &SurfaceConfiguration, label: &str)
 -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) 
 {
     let size = wgpu::Extent3d { // 2.

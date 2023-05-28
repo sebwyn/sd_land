@@ -9,7 +9,7 @@ pub struct Theme {
 }
 
 impl Theme {
-    const COLOR_LABELS: [(&str, Range<f32>); 7] = [
+    const COLOR_LABELS: [(&'static str, Range<f32>); 7] = [
         ("red",      0f32.. 15f32),
         ("orange",  15f32.. 45f32),
         ("yellow",  45f32.. 72f32),

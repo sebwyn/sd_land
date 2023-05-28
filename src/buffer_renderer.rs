@@ -17,7 +17,7 @@ pub struct BufferView {
 }
 
 impl BufferView {
-    const DEFAULT_FONT: &str = "Arial";
+    const DEFAULT_FONT: &'static str = "Arial";
 
     pub fn contains(&self, point: &PhysicalPosition<f64>) -> bool {
         self.view.contains_point(point)
@@ -167,6 +167,7 @@ impl<'a> BufferPass<'a> {
     #[inline] fn buffer_ranges(&self) -> &[BufferRange] { self.buffer.selection.as_slice() }
     #[inline] fn cursors(&self) -> Vec<Cursor> { vec![self.buffer.cursor] }
 
+    //noinspection ALL
     pub fn render_buffer_ranges(&self) -> Vec<Vertex> {
         let padding_width = self.font().get_char_pixel_width(' ', None, self.font_scale());
 

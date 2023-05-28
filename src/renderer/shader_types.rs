@@ -27,7 +27,7 @@ impl<T: Default + Copy> Vector<T> {
             2 => Self::Vec2(values[0..2].try_into().unwrap()),
             3 => Self::Vec2(values[0..3].try_into().unwrap()),
             4 => Self::Vec2(values[0..4].try_into().unwrap()),
-            size => panic!("Creating weird vector size {size}")
+            _size => panic!("Creating weird vector size {_size}")
         }
     }
 }
@@ -130,25 +130,25 @@ pub fn create_binding_type(naga_type: &naga::TypeInner) -> Option<wgpu::BindingT
 pub fn create_uniform_storage(naga_type: &naga::TypeInner) -> Option<MaterialValue> {
     let value = match naga_type {
         naga::TypeInner::Scalar { kind, ..  } => match kind {
-            naga::ScalarKind::Sint =>  MaterialValue::Int(0),
-            naga::ScalarKind::Uint =>  MaterialValue::Uint(0),
-            naga::ScalarKind::Float => MaterialValue::Float(0f32),
-            naga::ScalarKind::Bool =>  MaterialValue::Bool(false),
+            ScalarKind::Sint =>  MaterialValue::Int(0),
+            ScalarKind::Uint =>  MaterialValue::Uint(0),
+            ScalarKind::Float => MaterialValue::Float(0f32),
+            ScalarKind::Bool =>  MaterialValue::Bool(false),
         },
         naga::TypeInner::Vector { size, kind, .. } => match kind {
-            naga::ScalarKind::Sint =>  MaterialValue::IntVector(Vector::<i32>::new(*size as u32)),
-            naga::ScalarKind::Uint =>  MaterialValue::UintVector(Vector::<u32>::new(*size as u32)),
-            naga::ScalarKind::Float => MaterialValue::FloatVector(Vector::<f32>::new(*size as u32)),
-            naga::ScalarKind::Bool =>  MaterialValue::BoolVector(Vector::<bool>::new(*size as u32)),
+            ScalarKind::Sint =>  MaterialValue::IntVector(Vector::<i32>::new(*size as u32)),
+            ScalarKind::Uint =>  MaterialValue::UintVector(Vector::<u32>::new(*size as u32)),
+            ScalarKind::Float => MaterialValue::FloatVector(Vector::<f32>::new(*size as u32)),
+            ScalarKind::Bool =>  MaterialValue::BoolVector(Vector::<bool>::new(*size as u32)),
         },
-        naga::TypeInner::Matrix { columns, rows, .. } => 
+        naga::TypeInner::Matrix { columns, rows, .. } =>
             MaterialValue::Matrix(Matrix::new(*columns as u32, *rows as u32)?),
         
         // naga::TypeInner::Struct { members, .. } => todo!()),
         
-        naga::TypeInner::Image { .. } => 
+        naga::TypeInner::Image { .. } =>
             MaterialValue::Texture(Texture::default()),
-        naga::TypeInner::Sampler { .. } => 
+        naga::TypeInner::Sampler { .. } =>
             MaterialValue::Sampler(Sampler::default()),
 
         _ => return None
@@ -187,13 +187,11 @@ impl MaterialValue {
                 let bp = ptr::addr_of!(v) as *const u8;
                 let slice = unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) };
                 vec.extend_from_slice(slice);
-
             },
             MaterialValue::Uint(v) => {
                 let bp = ptr::addr_of!(v) as *const u8;
                 let slice = unsafe { slice::from_raw_parts(bp, mem::size_of::<f32>()) };
                 vec.extend_from_slice(slice);
-
             },
             MaterialValue::Bool(v) => if *v { vec.push(1u8) } else { vec.push(0u8) },
             MaterialValue::FloatVector(v) => return Some(v.as_bytes()),
@@ -224,7 +222,6 @@ impl MaterialValue {
             MaterialValue::Struct(v) => v,
             MaterialValue::Matrix(v) => v,
         };
-
         any.downcast_mut::<T>()
     }
 
@@ -243,7 +240,6 @@ impl MaterialValue {
             MaterialValue::Struct(v) => v,
             MaterialValue::Matrix(v) => v,
         };
-
         any.downcast_ref::<T>()
     }
 }

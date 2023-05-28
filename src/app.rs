@@ -1,3 +1,5 @@
+use std::env;
+
 use legion::{World, Entity};
 use winit::{
     event::*,
@@ -10,7 +12,7 @@ use crate::{
     background_renderer::BackgroundRenderer, 
     ui_box_renderer::UiBox, 
     colorscheme::hex_color, 
-    layout::{Layout, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
+    layout::{Element, DemandedLayout, DemandValue, LayoutProvider, Anchor}, 
     text_renderer::TextBox, 
     ui_event_system::{UserEventListener, text_box_on_key_event}, 
     buffer_renderer::{BufferRenderer, BufferView}, 
@@ -32,7 +34,7 @@ fn _theme_selector_view(world: &mut World) {
         ..Default::default()
     };
 
-    let preview_layout = Layout::new(DemandedLayout { 
+    let preview_layout = Element::new(DemandedLayout { 
         size: Some([
             DemandValue::Percent(0.8), 
             DemandValue::Percent(1.0)
@@ -53,7 +55,7 @@ fn _theme_selector_view(world: &mut World) {
         font_scale: 0.8
     };
 
-    let title_layout = Layout::new(DemandedLayout {
+    let title_layout = Element::new(DemandedLayout {
         size: Some([
             DemandValue::Percent(0.25), 
             DemandValue::Percent(0.1)
@@ -73,7 +75,7 @@ fn _theme_selector_view(world: &mut World) {
         font_scale: 0.6
     };
 
-    let explanation_layout = Layout::new(DemandedLayout {
+    let explanation_layout = Element::new(DemandedLayout {
         size: Some([
             DemandValue::Percent(1.0), 
             DemandValue::Percent(0.25)
@@ -91,7 +93,7 @@ fn _theme_selector_view(world: &mut World) {
         ..Default::default()
     };
 
-    let text_box_layout = Layout::new(DemandedLayout {
+    let text_box_layout = Element::new(DemandedLayout {
         size: Some([DemandValue::Percent(0.8f32), DemandValue::Absolute(51f32)]),
         position: Some([
             DemandValue::Absolute(50f32),
@@ -134,7 +136,9 @@ fn _theme_selector_view(world: &mut World) {
 
 fn initialize_world(renderer: &mut Renderer, world: &mut World, systems: &mut Systems) {
 
-    let buffer = Buffer::load("src/app.rs").unwrap();
+    let file_to_open = env::args().nth(1).unwrap_or("src/app.rs".to_string());
+
+    let buffer = Buffer::load(&file_to_open).unwrap();
     let buffer_view = BufferView::new(200, 2800, 0, 2400)
         .font("assets/fonts/RobotoMono-VariableFont_wght.ttf")
         .line_height(50f32);

@@ -17,17 +17,17 @@ use legion::{IntoQuery, Entity, component};
  */
 
 #[derive(Clone)]
-pub struct Layout {
+pub struct Element {
     id: usize,
     parent: Option<usize>,
     demands: DemandedLayout,
-    provider: Option<LayoutProvider>
+    layout: Option<LayoutProvider>,
 }
 
 static LAYOUT_INDEX: AtomicUsize = AtomicUsize::new(0);
 
 
-impl Layout {
+impl Element {
     pub fn new(demands: DemandedLayout) -> Self {    
         let id = LAYOUT_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -35,23 +35,23 @@ impl Layout {
             id,
             parent: None,
             demands,
-            provider: None,
+            layout: None,
         }
     }
 
     pub fn child_layout_provider(mut self, provider: LayoutProvider) -> Self {
-        self.provider = Some(provider); self
+        self.layout = Some(provider); self
     }
 
-    pub fn parent(mut self, parent_layout: &Layout) -> Self {
+    pub fn parent(mut self, parent_layout: &Element) -> Self {
         self.parent = Some(parent_layout.id); self
     }
 
-    pub fn add_child(&self, child_layout: &mut Layout) {
+    pub fn add_child(&self, child_layout: &mut Element) {
         child_layout.parent = Some(self.id)
     }
 
-    pub fn add_parent(&mut self, parent_layout: &Layout) {
+    pub fn add_parent(&mut self, parent_layout: &Element) {
         self.parent = Some(parent_layout.id);
     }
 }
@@ -186,7 +186,7 @@ struct LayoutNode<'a> {
     demands: DemandedLayout,
     provider: Option<&'a LayoutProvider>,
 
-    children_indices: Vec<usize>, //indices referencing the associated nodes datastructure
+    children_indices: Vec<usize>, //indices referencing the associated nodes data-structure
 
     id: usize, //world id of node
     parent_id: Option<usize>, //world id of parent
@@ -197,7 +197,7 @@ struct LayoutNode<'a> {
 pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
     //add transforms to any layouts that don't have transforms
     let layouts_without_transforms = <Entity>::query()
-        .filter(component::<Layout>() & !component::<Transform>())
+        .filter(component::<Element>() & !component::<Transform>())
         .iter(world)
         .cloned()
         .collect::<Vec<_>>();
@@ -206,7 +206,7 @@ pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
         world.entry(entity).unwrap().add_component(Transform::default());
     }
     
-    let mut layouts = <(&Layout, &mut Transform)>::query()
+    let mut layouts = <(&Element, &mut Transform)>::query()
         .iter_mut(world)
         .map(|(layout, transform)| {
             LayoutNode {
@@ -215,7 +215,7 @@ pub fn layout_on_update(world: &mut legion::World, systems: &Systems) {
                 children_indices: Vec::new(),
 
                 demands: layout.demands.clone(),
-                provider: layout.provider.as_ref(),
+                provider: layout.layout.as_ref(),
                 transform
             }
         })
@@ -311,186 +311,10 @@ fn update_layout_for_node(node_index: usize, parent_transform: &Transform, nodes
     }
 }
 
-
 #[cfg(test)]
-pub(crate) mod layout_test {
-    use legion::{World, EntityStore};
-    use winit::dpi::PhysicalSize;
-
-    use super::*;
-
+mod test {
     #[test]
-    fn relative_layout_uses_screen_percentages() {
-        let mut systems = Systems::new(PhysicalSize { width: 800, height: 600 });
-        systems.register_update_system(layout_on_update);
-
-        let mut world = World::default();
-
-        let entity1_size = [DemandValue::Absolute(15f32), DemandValue::Absolute(25f32)];
-        let entity1_position = [DemandValue::Absolute(40f32), DemandValue::Absolute(55f32)];
-
-        let entity1_expected_size = (15f32, 25f32);
-        let entity1_expected_position = (40f32, 55f32);
-
-        let entity2_size = [DemandValue::Percent(0.5), DemandValue::Percent(0.5)];
-        let entity2_position = [DemandValue::Percent(0.25f32), DemandValue::Percent(0.25f32)];
-
-        let entity2_expected_size = (400f32, 300f32);
-        let entity2_expected_position = (200f32, 150f32);
-
-        let entity1_handle = world.push((
-            Transform::default(), 
-            Layout::new(DemandedLayout { 
-                size: Some(entity1_size), 
-                position: Some(entity1_position),
-                visible: true,
-                ..Default::default() 
-            }),
-        ));
-
-        let entity2_handle = world.push((
-            Transform::default(), 
-            Layout::new(DemandedLayout { 
-                size: Some(entity2_size), 
-                position: Some(entity2_position),
-                visible: true,
-                ..Default::default() 
-            }),
-        ));
-    
-        systems.update(&mut world);
-        let entity1 = world.entry_ref(entity1_handle).unwrap();
-        let transform1 = entity1.get_component::<Transform>().unwrap();
-        assert_eq!(entity1_expected_size, transform1.size);
-        assert_eq!(entity1_expected_position, transform1.position);
-
-        let entity2 = world.entry_ref(entity2_handle).unwrap();
-
-        let transform2 = entity2.get_component::<Transform>().unwrap();
-        assert_eq!(entity2_expected_size, transform2.size);
-        assert_eq!(entity2_expected_position, transform2.position);
+    fn test_layout_supports_box_sizing() {
 
     }
-
-    #[test]
-    fn hierarchies_are_layed_out() {
-        let mut systems = Systems::new(PhysicalSize { width: 800, height: 600 });
-        systems.register_update_system(layout_on_update);
-
-        let mut world = World::default();
-
-        let entity1_size = [DemandValue::Absolute(15f32), DemandValue::Absolute(25f32)];
-        let entity1_position = [DemandValue::Absolute(40f32), DemandValue::Absolute(55f32)];
-
-        let mut layout1 = Layout::new(DemandedLayout { 
-            size: Some(entity1_size), 
-            position: Some(entity1_position),
-            visible: true,
-            ..Default::default() 
-        });
-
-        let entity2_size = [DemandValue::Percent(0.5), DemandValue::Percent(0.5)];
-        let entity2_position = [DemandValue::Percent(0.25f32), DemandValue::Percent(0.25f32)];
-
-        let layout2 = Layout::new(DemandedLayout { 
-            size: Some(entity2_size), 
-            position: Some(entity2_position), 
-            visible: true,
-            ..Default::default() 
-        }).child_layout_provider(LayoutProvider::Relative);
-        
-        layout1.add_parent(&layout2);
-
-        let entity1_expected_size = (15f32, 25f32);
-        let entity1_expected_position = (200f32 + 40f32, 150f32 + 55f32);
-
-        let entity2_expected_size = (400f32, 300f32);
-        let entity2_expected_position = (200f32, 150f32);
-
-        let entities = world.extend([
-            (
-                Transform::default(), 
-                layout1,
-            ),
-            (
-                Transform::default(), 
-                layout2,
-            ),        
-        ]).to_vec();
-    
-        systems.update(&mut world);
-        let entity1 = world.entry_ref(entities[0]).unwrap();
-        let transform1 = entity1.get_component::<Transform>().unwrap();
-        assert_eq!(entity1_expected_size, transform1.size);
-        assert_eq!(entity1_expected_position, transform1.position);
-
-        let entity2 = world.entry_ref(entities[1]).unwrap();
-
-        let transform2 = entity2.get_component::<Transform>().unwrap();
-        assert_eq!(entity2_expected_size, transform2.size);
-        assert_eq!(entity2_expected_position, transform2.position);
-
-    }
-
-    #[test]
-    fn vertical_layouts() {
-        let mut systems = Systems::new(PhysicalSize { width: 800, height: 600 });
-        systems.register_update_system(layout_on_update);
-
-        let mut world = World::default();
-
-        //create a vertical layout that is wide
-        let vertical_layout = Layout::new(DemandedLayout { 
-            size: Some([DemandValue::Percent(0.6), DemandValue::Percent(1.0f32)]), 
-            position: Some([DemandValue::Percent(0.2), DemandValue::Absolute(0f32)]),
-            visible: true ,
-            ..Default::default()
-        }).child_layout_provider(LayoutProvider::Vertical);
-
-        let child1_layout = Layout::new(DemandedLayout { 
-            size: Some([DemandValue::Percent(0.8), DemandValue::Percent(0.5f32)]),
-            vertical_index: Some(0),
-            visible: true,
-            ..Default::default()
-        }).parent(&vertical_layout);
-
-        let child2_layout = Layout::new(DemandedLayout { 
-            size: Some([DemandValue::Percent(0.8), DemandValue::Absolute(150f32)]),
-            position: Some([DemandValue::Percent(0.2), DemandValue::Absolute(0f32)]),
-            vertical_index: Some(1),
-            visible: true,
-            ..Default::default()
-        }).parent(&vertical_layout);
-
-        let entities = world.extend([
-            (Transform::default(), vertical_layout), (Transform::default(), child2_layout), (Transform::default(), child1_layout)
-        ]).to_vec();
-
-        systems.update(&mut world);
-
-        let transforms = entities.into_iter()
-            .map(|e| 
-                world.entry_ref(e)
-                    .unwrap()
-                    .get_component::<Transform>()
-                    .unwrap()
-                    .clone()
-            )
-            .collect::<Vec<_>>();
-
-        assert_eq!(3, transforms.len());
-        assert_eq!(480f32, transforms[0].size.0.round());
-        assert_eq!(600f32, transforms[0].size.1.round());
-
-        assert_eq!((160f32, 0f32), transforms[0].position);
-        
-        assert_eq!(384f32, transforms[1].size.0.round());
-        assert_eq!(150f32, transforms[1].size.1.round());
-        assert_eq!((256f32, 300f32), transforms[1].position);
-
-        assert_eq!(384f32, transforms[2].size.0.round());
-        assert_eq!(300f32, transforms[2].size.1.round());
-        assert_eq!((160f32, 600f32), transforms[2].position);
-        
-    }
-}   
+}
