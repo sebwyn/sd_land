@@ -5,6 +5,7 @@ use winit::{
 };
 
 use crate::event::{Event, InputState, to_user_event};
+use crate::grid_renderer::{add_grid_lines_subrender, GridLines};
 use crate::layout::Transform;
 use crate::renderer::camera::Camera;
 use crate::renderer::render_api::RenderApi;
@@ -23,7 +24,8 @@ fn update_screen_size(#[resource] screen_size: &mut (f32, f32), #[resource] even
             Some(*new_size)
         } else {
             None
-        }})
+        }
+    })
         .and_then(|new_size| -> Option<()> {
             *screen_size = (new_size.width as f32, new_size.height as f32);
             None
@@ -55,7 +57,7 @@ pub fn run() {
     let mut renderer = RenderApi::new(&window);
     let mut world = World::default();
 
-    let camera = Camera::new(3200, 2400);
+    let camera = Camera::new(800, 600);
     world.push((camera, ActiveSceneCamera));
 
     let sprite = Sprite {
@@ -79,7 +81,16 @@ pub fn run() {
 
     add_scene_camera_controller(&mut schedule_builder);
 
+    let grid_lines = GridLines::new(
+        100f32,
+        100f32,
+        [0.1, 0.1, 0.1],
+        2.5f32,
+        &mut renderer,
+    );
+
     schedule_builder.add_system(begin_render_system());
+    add_grid_lines_subrender(grid_lines, &mut schedule_builder);
     add_sprite_subrender(SpriteRenderer::new(&mut renderer).unwrap(), &mut schedule_builder);
     schedule_builder.add_system(end_render_system());
 
@@ -115,10 +126,10 @@ pub fn run() {
                 if resources.get::<Vec<Command>>().unwrap().contains(&Command::CloseApp) {
                     *control_flow = ControlFlow::Exit;
                 }
-            },
+            }
             winit::event::Event::MainEventsCleared => {
                 window.request_redraw();
-            },
+            }
             _ => {}
         }
     });

@@ -19,3 +19,4 @@ pub mod theme;
 pub mod event;
 pub mod sprite_renderer;
 pub mod scene_camera;
+pub mod grid_renderer;
