@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
-use legion::system;
+use legion::{component, system};
 use legion::systems::Builder;
+use crate::layout::Transform;
 use crate::sprite::SpriteSheetSprite;
 
 #[derive(Clone)]
@@ -33,7 +34,10 @@ impl SpriteAnimation {
 
 pub fn add_sprite_animation(schedule: &mut Builder) { schedule.add_system(animation_update_system()); }
 
+
+//only update animations that are actually shown on the screen
 #[system(for_each)]
+#[filter(component::< Transform > ())]
 fn animation_update(sprite: &mut SpriteSheetSprite, animation: &mut SpriteAnimation) {
     //if the animation hasn't been started, start it
     if let Some(last_frame_time) = animation.last_frame_time {
